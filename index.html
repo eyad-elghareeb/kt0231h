@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>KT0231H DAC Control - Offline</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span class="logo-mark">◆</span>
+      <span class="app-title">KT0231H DAC Control</span>
+      <span class="app-sub">Offline · KT0231H (0x31B2:0x1132) + KT02H20 compat</span>
+    </div>
+    <div class="header-right">
+      <span id="queue-badge" class="queue-badge" style="display:none"></span>
+      <span id="device-name" class="device-name">No device</span>
+      <button id="btn-connect" class="btn btn-primary">Connect USB</button>
+      <button id="btn-disconnect" class="btn btn-danger" disabled>Disconnect</button>
+    </div>
+  </header>
+
+  <div id="status-bar" class="status-bar status-idle" role="status" aria-live="polite">
+    <span id="status-text">Not connected - click Connect USB to begin.</span>
+  </div>
+
+  <main class="main">
+    <section class="card visualizer-card">
+      <div class="card-title">Frequency Response</div>
+      <canvas id="eq-canvas" class="eq-canvas" aria-label="Frequency response graph" role="img"></canvas>
+    </section>
+
+    <section class="card global-controls">
+      <div class="card-title">Global Controls</div>
+
+      <div class="control-row">
+        <label class="control-label">EQ Switch</label>
+        <div class="toggle-group">
+          <button id="btn-eq-on" class="toggle-btn active" disabled>ON</button>
+          <button id="btn-eq-off" class="toggle-btn" disabled>OFF</button>
+        </div>
+      </div>
+
+      <div class="control-row btn-row">
+        <button id="btn-read-all" class="btn btn-secondary" disabled title="R">Read from Device</button>
+        <button id="btn-write-all" class="btn btn-secondary" disabled title="W">Write All Bands</button>
+        <button id="btn-reset-eq" class="btn btn-ghost" disabled>Reset EQ (0 dB)</button>
+      </div>
+
+      <div class="shortcut-hint">
+        Shortcuts: <kbd>R</kbd> Read &nbsp; <kbd>W</kbd> Write &nbsp;
+        <kbd>Ctrl+S</kbd> Save preset &nbsp; <kbd>Ctrl+Z</kbd> Undo band &nbsp;
+        <kbd>Esc</kbd> Clear log
+      </div>
+    </section>
+
+    <section class="card volume-section">
+      <div class="card-title">Volume Controls</div>
+
+      <div class="control-row">
+        <label class="control-label" title="Register 0x3A — analog ADC PGA gain">A_ADC PGA</label>
+        <select id="pga-adc" class="volume-select" disabled></select>
+      </div>
+
+      <div class="control-row">
+        <label class="control-label" title="Register 0x3B — analog DAC PGA gain">A_DAC PGA</label>
+        <select id="pga-dac" class="volume-select" disabled></select>
+      </div>
+
+      <div class="control-row">
+        <label class="control-label" title="Register 0x65 — digital ADC gain, 0.5dB steps">
+          DIG_ADC
+          <span class="value-badge" id="dig-adc-val">+0.0 dB</span>
+        </label>
+        <input type="range" id="dig-adc" class="slider slider-wide"
+               min="-64" max="63.5" step="0.5" value="0" disabled />
+      </div>
+
+      <div class="control-row">
+        <label class="control-label" title="Register 0x66 b0 — digital DAC gain, 0.5dB steps (single-DAC model)">
+          DIG_DAC Preamp
+          <span class="value-badge" id="global-gain-val">0.0 dB</span>
+        </label>
+        <input type="range" id="global-gain" class="slider slider-wide"
+               min="-64" max="63.5" step="0.5" value="0" disabled />
+      </div>
+    </section>
+
+    <section class="card eq-section">
+      <div class="card-title">Parametric EQ Bands</div>
+      <div id="eq-bands" class="eq-bands"></div>
+    </section>
+
+    <section class="card presets-section">
+      <div class="card-title presets-header">
+        <span>Local Presets</span>
+        <div class="preset-actions">
+          <button id="btn-export" class="btn btn-ghost btn-sm" disabled>Export JSON</button>
+          <button id="btn-import" class="btn btn-ghost btn-sm" disabled>Import JSON</button>
+          <input type="file" id="file-import" accept=".json" style="display:none" />
+        </div>
+      </div>
+      <div class="preset-row">
+        <input type="text" id="preset-name" class="preset-input"
+               placeholder="Preset name... (or Ctrl+S)" maxlength="40" />
+        <button id="btn-save-preset" class="btn btn-secondary" disabled>Save Current</button>
+      </div>
+      <div id="preset-list" class="preset-list"></div>
+    </section>
+
+    <section class="card log-section">
+      <div class="card-title log-header">
+        <span>USB Log</span>
+        <button id="btn-clear-log" class="btn btn-ghost btn-sm" title="Esc">Clear</button>
+      </div>
+      <div id="log" class="log-box"></div>
+    </section>
+  </main>
+
+  <div id="toast-root" aria-live="polite" aria-atomic="true"></div>
+  <script src="app.js"></script>
+</body>
+</html>
