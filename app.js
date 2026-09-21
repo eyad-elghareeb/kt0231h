@@ -8,6 +8,8 @@
  *
  * v5:  KT0231H support (6 bands, per-profile register maps, VID:PID match,
  *      best-effort volume reads). KT02H20 kept as fallback profile.
+ * v6:  Explicit KT0211L profile (shares PID 0x0111 with KT02H20 — told apart
+ *      by product-name match). Name match now runs before VID:PID.
  * v4:  register-protocol rewrite (legacy AA/BB command protocol removed)
  *      debug logging, report-ID probe, single-frame send/recv
  *
@@ -158,6 +160,7 @@ const FILTER_TYPES_5 = [
 const PROFILES = {
   'KT0231H': {
     name: 'KT0231H', vid: 0x31B2, pid: 0x1132,
+    matchKeys: ['KT0231H', '0231H'],
     reportId: RPT_ID, probeReportIds: false,
     writeAck: 0x4F, // hardware-verified: this chip ACKs writes with 0x4F
     gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
@@ -173,12 +176,39 @@ const PROFILES = {
   },
   'KT02H20': {
     name: 'KT02H20', vid: 0x31B2, pid: 0x0111,
+    matchKeys: ['KT02H20', '02H20', 'JM12'],
     reportId: RPT_ID, probeReportIds: false,
     writeAck: WRITE_ACK,
     gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
     defaultBandCount: REG.EQ_BANDS,
     defaultFreqs: [60, 230, 910, 3600, 14000],
     defaultQ: 1.0,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+  },
+  // Listed AFTER KT02H20 on purpose: both share PID 0x0111, so a nameless
+  // 0x0111 device must fall through to KT02H20 by default. Name matches
+  // ('CDS…'/'0211…') route here regardless of order.
+  'KT0211L': {
+    // Shares VID:PID 0x31B2:0x0111 with KT02H20 but reports its own product
+    // string (seen: 'CDS.KT USB Audio', FW 'CDSV100.003'). Map verified by
+    // live hidapi dump 2026-09-21: identical KT02H20 layout. NOTE: EQ enable
+    // regs read 3, not 1 — bit1 meaning unknown, the app preserves it
+    // (writes val|1 / val&~1, never a bare 0/1).
+    name: 'KT0211L', vid: 0x31B2, pid: 0x0111,
+    matchKeys: ['KT0211', '0211L', 'CDS'],
+    reportId: RPT_ID, probeReportIds: false,
+    writeAck: WRITE_ACK, // 0x03 confirmed live (write ACKed, readback matched)
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000],
+    defaultQ: 0.707,
     versionAddr: REG.VERSION, versionCount: 2,
     reg: {
       EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
@@ -209,14 +239,18 @@ const DEFAULT_PROFILE = {
 };
 
 function resolveProfile(productName = '', vendorId = null, productId = null) {
-  // 1) exact VID:PID match wins (WebHID gives us numeric ids — most reliable)
+  // 1) product-name match first: KT0211L and KT02H20 share VID:PID 0x0111,
+  //    so the name ('CDS…' vs 'KT02H20…') is the only way to tell them apart.
+  const uname = (productName || '').toUpperCase();
+  for (const p of Object.values(PROFILES)) {
+    if ((p.matchKeys || []).some(k => uname.includes(k.toUpperCase()))) return p;
+  }
+  // 2) exact VID:PID fallback (catches renamed/blank product strings)
+  //    NOTE: 0x0111 maps to KT02H20 here — a KT0211L with a wiped product
+  //    string will land on KT02H20, which is register-identical for DAC EQ.
   for (const p of Object.values(PROFILES)) {
     if (p.vid !== null && vendorId !== null && productId !== null &&
         vendorId === p.vid && productId === p.pid) return p;
-  }
-  // 2) product-name substring fallback (legacy behaviour)
-  for (const [key, p] of Object.entries(PROFILES)) {
-    if (productName === key || productName.includes(key) || key.includes(productName)) return p;
   }
   return DEFAULT_PROFILE;
 }
