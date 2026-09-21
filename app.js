@@ -10,6 +10,17 @@
  *      best-effort volume reads). KT02H20 kept as fallback profile.
  * v6:  Explicit KT0211L profile (shares PID 0x0111 with KT02H20 — told apart
  *      by product-name match). Name match now runs before VID:PID.
+ * v7:  - KT0231H second (ADC-side) EQ bank exposed in the UI (EN 0x41,
+ *        bands 0x42-0x4D) via a DAC/ADC bank toggle.
+ *      - Volume register semantics CONFIRMED from vendor KT_USB_APP 1.0.17
+ *        reverse engineering + upstream ktmicro-tools register map:
+ *        0x3A/0x3B PGA, 0x65/0x66 digital (KT0211L/KT02H20; best-effort on
+ *        KT0231H where those addresses are EQ regs).
+ *      - Firmware-BIN EQ patcher: patch the unit's OWN firmware backup with
+ *        current EQ and export "_new.bin" for KT_BOOT_TOOL (persistence).
+ *      - Boot-mode panel: KTM handshake + full flash sequence (connect,
+ *        VER/KEY/CHP/CFG/PWO/KSTA, 512B block writes, STP) over WebHID
+ *        feature reports; bootloader = 0x31B2:0x0101.
  * v4:  register-protocol rewrite (legacy AA/BB command protocol removed)
  *      debug logging, report-ID probe, single-frame send/recv
  *
@@ -168,8 +179,10 @@ const PROFILES = {
     defaultFreqs: [61, 122, 184, 248, 316, 392],
     defaultQ: 0.7,
     versionAddr: 0x06, versionCount: 2,
+    supportsAdcBank: true, // second 6-band bank (ADC side), hardware-verified map
     reg: {
       EQ_DAC: 0x35, EQ_DAC_EN: 0x34, EQ_STRIDE: 2, EQ_BANDS: 6,
+      EQ_ADC: 0x42, EQ_ADC_EN: 0x41,
       PGA_ADC: 0x3A, PGA_DAC: 0x3B, DIG_ADC: 0x65, DIG_DAC: 0x66,
     },
     filterTypes: FILTER_TYPES_5,
@@ -435,15 +448,69 @@ function makeBand(freq, index, q = 1.0) {
   return { index, freq, gain: 0, q, filterType: 0 };
 }
 
+function makeBanks() {
+  const freqs = profileFreqs();
+  const dq    = profileDefaultQ();
+  const n     = hid?.profile?.defaultBandCount ?? hid?.reg?.('EQ_BANDS') ?? 5;
+  const mk    = () => Array.from({ length: n }, (_, i) => makeBand(freqs[i] ?? 1000, i, dq));
+  const banks = { DAC: mk() };
+  if (hid?.profile?.supportsAdcBank) banks.ADC = mk();
+  return banks;
+}
+
 const state = {
-  bands:      PROFILES.KT0231H.defaultFreqs.map((f, i) => makeBand(f, i, PROFILES.KT0231H.defaultQ)),
-  bandCount:  PROFILES.KT0231H.defaultBandCount,
-  eqEnabled:  true,
+  bank:       'DAC',                    // active EQ bank (DAC | ADC)
+  banks:      null,                     // { DAC: [...bands], ADC: [...bands] }
+  get bands() { return this.banks[this.bank]; },
+  bankCount:  PROFILES.KT0231H.defaultBandCount,
+  eqEnabled:  { DAC: true, ADC: true },
   globalGain: 0,
   pgaADC:     0,
   pgaDAC:     0,
   digADC:     0,
 };
+
+/* ── bank helpers ── */
+
+function eqBase(bank = state.bank) {
+  if (bank === 'ADC') {
+    const a = hid.reg('EQ_ADC');
+    if (a != null) return a;
+  }
+  return hid.reg('EQ_DAC');
+}
+
+function eqEnableAddr(bank = state.bank) {
+  if (bank === 'ADC') {
+    const a = hid.reg('EQ_ADC_EN');
+    if (a != null) return a;
+  }
+  return hid.reg('EQ_DAC_EN');
+}
+
+function hasAdcBank() { return !!hid.profile?.supportsAdcBank && hid.reg('EQ_ADC') != null; }
+
+function switchBank(bank) {
+  if (!state.banks[bank] || state.bank === bank) return;
+  state.bank = bank;
+  buildBandUI();
+  state.bands.forEach((_, i) => refreshBandUI(i));
+  visualizer.bands = state.bands;
+  visualizer?.draw(state.bands);
+  updateEqToggleUI();
+  updateBankUI();
+  log(`Switched to ${bank} EQ bank (base 0x${eqBase().toString(16)}).`, 'inf');
+}
+
+function updateBankUI() {
+  const wrap = $('bank-toggle');
+  if (!wrap) return;
+  wrap.style.display = hasAdcBank() ? 'flex' : 'none';
+  $('btn-bank-dac').classList.toggle('active', state.bank === 'DAC');
+  $('btn-bank-adc').classList.toggle('active', state.bank === 'ADC');
+  const t = $('eq-section-title');
+  if (t) t.textContent = `Parametric EQ — ${state.bank} bank`;
+}
 
 const undoStack = [];
 const UNDO_LIMIT = 30;
@@ -525,17 +592,32 @@ async function readString(addr, count) {
   return String.fromCharCode(...chars).replace(/\0/g, '').trim();
 }
 
-async function fetchEqSwitch() {
-  const enAddr = hid.reg('EQ_DAC_EN');
+async function fetchEqSwitch(bank = state.bank) {
+  const enAddr = eqEnableAddr(bank);
   const val = await readRegister(enAddr);
-  state.eqEnabled = (val & 1) !== 0;
-  log(`DAC EQ: ${state.eqEnabled ? 'ON' : 'OFF'} (0x${enAddr.toString(16)})`, 'inf');
+  state.eqEnabled[bank] = (val & 1) !== 0;
+  log(`${bank} EQ: ${state.eqEnabled[bank] ? 'ON' : 'OFF'} (0x${enAddr.toString(16)} raw=${val})`, 'inf');
+}
+
+async function fetchAllBanks() {
+  for (const bank of Object.keys(state.banks)) {
+    const base = eqBase(bank);
+    const stride = hid.reg('EQ_STRIDE');
+    const bands = state.banks[bank];
+    for (let i = 0; i < bands.length; i++) {
+      const aReg = await readRegister(base + i * stride);
+      const bReg = await readRegister(base + i * stride + 1);
+      Object.assign(bands[i], decodeBand(aReg, bReg));
+      bands[i].index = i;
+    }
+    await fetchEqSwitch(bank);
+  }
 }
 
 async function fetchAllBands() {
-  const base = hid.reg('EQ_DAC');
+  const base = eqBase();
   const stride = hid.reg('EQ_STRIDE');
-  for (let i = 0; i < state.bandCount; i++) {
+  for (let i = 0; i < state.bands.length; i++) {
     const aReg = await readRegister(base + i * stride);
     const bReg = await readRegister(base + i * stride + 1);
     const band = state.bands[i];
@@ -855,6 +937,13 @@ function isValidPresetEntry(entry) {
     typeof b.freq === 'number' && typeof b.gain === 'number' &&
     typeof b.q === 'number'    && typeof b.filterType === 'number'
   )) return false;
+  if (entry.adcBands !== undefined) {
+    if (!Array.isArray(entry.adcBands)) return false;
+    if (!entry.adcBands.every(b =>
+      typeof b.freq === 'number' && typeof b.gain === 'number' &&
+      typeof b.q === 'number'    && typeof b.filterType === 'number'
+    )) return false;
+  }
   if (typeof entry.globalGain !== 'number') return false;
   return true;
 }
@@ -868,7 +957,14 @@ const Presets = {
     const p = this.load();
     p[name.trim()] = {
       bands:      state.bands.map(({ freq, gain, q, filterType }) => ({ freq, gain, q, filterType })),
+      bank:       state.bank,
+      adcBands:   state.banks.ADC
+        ? state.banks.ADC.map(({ freq, gain, q, filterType }) => ({ freq, gain, q, filterType }))
+        : undefined,
       globalGain: state.globalGain,
+      pgaADC:     state.pgaADC,
+      pgaDAC:     state.pgaDAC,
+      digADC:     state.digADC,
       savedAt:    new Date().toISOString(),
     };
     this.save(p);
@@ -904,8 +1000,332 @@ const Presets = {
 
 
 /* ════════════════════════════════════════════════════════════
-   § 8  UTILITIES
+   § 7B  FIRMWARE BIN EQ PATCHER  (persistence via KT_BOOT_TOOL)
+   The vendor persist flow is: dump/obtain the unit's OWN firmware .bin →
+   patch the EQ tables inside it → reflash with KT_BOOT_TOOL. HID register
+   writes never persist (DSP RAM only) — see PROTOCOL.md.
+
+   Image band entry = 8 bytes, little-endian:
+       [freq_Hz u16][Q×1000 u16][gain×10 s16][type u16]
+   Known offsets (JA11 KT0211L-class image): DAC table @ 0x106A,
+   ADC table @ 0x109A. Always re-located by pattern match first; the
+   static offsets are only a fallback hint.
 ════════════════════════════════════════════════════════════ */
+const FwBin = {
+  buf: null,
+  name: '',
+  dacOff: -1,
+  adcOff: -1,
+
+  /** Encode one band into 8 image bytes ([freq][Q][gain][type], LE). */
+  encodeBand8({ freq, gain, q, filterType }) {
+    const b = new Uint8Array(8);
+    const dv = new DataView(b.buffer);
+    dv.setUint16(0, Math.round(clamp(freq, 0, 65535)), true);
+    dv.setUint16(2, Math.round(clamp(q, 0, 65.535) * 1000), true);
+    dv.setInt16(4, Math.round(clamp(gain, -3276.8, 3276.7) * 10), true);
+    dv.setUint16(6, filterType & 0xFFFF, true);
+    return b;
+  },
+
+  decodeBand8(bytes, off) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset + off, 8);
+    return {
+      freq: dv.getUint16(0, true),
+      q:    dv.getUint16(2, true) / 1000,
+      gain: dv.getInt16(4, true) / 10,
+      filterType: dv.getUint16(6, true),
+    };
+  },
+
+  /** Find a run of `n` consecutive 8-byte band entries whose Q/type/gain
+      fields look like an EQ table (Q in 100..5000, type ≤ 4). Returns -1
+      or the byte offset of band #0. */
+  locateRun(bytes, n, hint) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const plausible = (off) => {
+      for (let i = 0; i < n; i++) {
+        const q  = dv.getUint16(off + i * 8 + 2, true);
+        const ty = dv.getUint16(off + i * 8 + 6, true);
+        const fq = dv.getUint16(off + i * 8 + 0, true);
+        if (q < 100 || q > 5000) return false;
+        if (ty > 4) return false;
+        if (fq < 20 || fq > 20000) return false;
+      }
+      return true;
+    };
+    if (hint >= 0 && hint + n * 8 <= bytes.length && plausible(hint)) return hint;
+    for (let off = 0; off + n * 8 <= bytes.length; off += 4) {
+      if (plausible(off)) return off;
+    }
+    return -1;
+  },
+
+  load(file) {
+    return file.arrayBuffer().then(ab => {
+      this.buf = new Uint8Array(ab);
+      this.name = file.name;
+      this.dacOff = this.locateRun(this.buf, 5, 0x106A);
+      this.adcOff = this.dacOff >= 0
+        ? this.locateRun(this.buf, 5, this.dacOff + 5 * 8 + 0x1C)
+        : -1;
+      if (this.dacOff >= 0 && this.adcOff < 0) {
+        // JA11-class images: ADC table follows DAC table by +0x30
+        const hint = this.dacOff + 0x30;
+        if (hint + 40 <= this.buf.length) this.adcOff = this.locateRun(this.buf, 5, hint);
+      }
+      return { size: this.buf.length, dacOff: this.dacOff, adcOff: this.adcOff };
+    });
+  },
+
+  readTable(off) {
+    if (off < 0 || !this.buf) return null;
+    const out = [];
+    for (let i = 0; i < 5; i++) out.push(this.decodeBand8(this.buf, off + i * 8));
+    return out;
+  },
+
+  patchTable(off, bands) {
+    if (off < 0 || !this.buf) return false;
+    for (let i = 0; i < Math.min(5, bands.length); i++) {
+      const enc = this.encodeBand8(bands[i]);
+      this.buf.set(enc, off + i * 8);
+    }
+    return true;
+  },
+
+  /** Current image as a downloadable Blob. */
+  exportBlob() {
+    return new Blob([this.buf], { type: 'application/octet-stream' });
+  },
+};
+
+
+/* ════════════════════════════════════════════════════════════
+   § 7C  BOOT-MODE FLASHER  (KTMicro bootloader, 0x31B2:0x0101)
+   Protocol reverse-engineered from KT_BOOT_TOOL 1.0.58 logs + binary and
+   corroborated by the upstream ktmicro-tools kt02h20_boot.py:
+   - transport: HID FEATURE reports (report ID 0x00 prepended)
+   - commands: 4-byte LE u32 — 0x1E4B544D 'KTM' sync, 0xF0564552 'VER',
+     0xF04B4559 'KEY', 0xD2434850 'CHP', 0x2D… CFG, 0x3C50574F 'PWO',
+     0x4B535441 'KSTA', 0x96535450 'STP'
+   - ACK = 0x78, CONT = 0xA5; write block = [0x69][sub][region u16][addr u16][512B data]
+   - flash sequence: sync → ver → key → chp → cfg → pwo → ksta →
+     meta(0xF0@0x80) → data blocks(0x00@0x84+, +4/block) →
+     cfgblk(0x90, region 0xE2) → sig(0x10@0x80, region 0xE0) → stp
+   ⚠ The vendor's own v1.0.58 tool appends a 4-byte tail per block that the
+     upstream (hardware-verified) implementation does not send; this panel
+     uses the upstream format. See PROTOCOL.md § boot.
+════════════════════════════════════════════════════════════ */
+const BOOT = {
+  VID: 0x31B2,
+  PIDS: [0x0101, 0x0001, 0x0002], // 0x0101 = upstream-verified; others seen in vendor descriptor templates
+  BLOCK: 512,
+  dev: null,
+  connected: false,
+
+  async connect() {
+    if (!navigator.hid) throw new Error('WebHID unavailable.');
+    const filters = this.PIDS.map(pid => ({ vendorId: this.VID, productId: pid }));
+    const list = await navigator.hid.requestDevice({ filters });
+    if (!list.length) throw new Error('No bootloader device selected.');
+    const dev = list[0];
+    if (!dev.opened) await dev.open();
+    this.dev = dev;
+    this.connected = true;
+    dev.addEventListener('disconnect', () => {
+      this.connected = false; this.dev = null;
+      log('Bootloader device disconnected.', 'warn');
+      updateBootUI();
+    });
+    return `${dev.productName || 'bootloader'} (vid=${hex(dev.vendorId)} pid=${hex(dev.productId)})`;
+  },
+
+  disconnect() {
+    const d = this.dev;
+    this.dev = null; this.connected = false;
+    return d?.opened ? d.close() : Promise.resolve();
+  },
+
+  async _feature(data, timeoutMs = 3000) {
+    if (!this.connected) throw new Error('Bootloader not connected.');
+    // WebHID feature reports: reportId 0 + payload (matches hidapi send_feature_report(b'\x00'+data))
+    await this.dev.sendFeatureReport(0, data);
+    // response via input report or getFeatureReport, depending on firmware build
+    const rx = await this._waitInput(timeoutMs);
+    return rx;
+  },
+
+  _waitInput(timeoutMs) {
+    return new Promise((res) => {
+      let done = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.dev?.removeEventListener('inputreport', h);
+      };
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true; cleanup();
+        // fall back to a feature-report read
+        this.dev?.receiveFeatureReport(0).then(r => res(new Uint8Array(r.buffer)))
+          .catch(() => res(new Uint8Array(0)));
+      }, timeoutMs);
+      const h = (e) => {
+        if (done) return;
+        done = true; cleanup();
+        res(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength));
+      };
+      this.dev.addEventListener('inputreport', h);
+    });
+  },
+
+  async _cmd32(word, label) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setUint32(0, word, true);
+    log(`BOOT TX → ${fmt(b)}  (${label})`, 'tx');
+    const rx = await this._feature(b);
+    log(`BOOT RX ← ${rx?.length ? fmt(rx) : '(none)'}`, 'rx');
+    return rx;
+  },
+
+  staticAck(rx) {
+    // upstream reads resp[1] == 0x78 (resp[0] = report id). Some builds return
+    // the ACK at [0]; accept either.
+    if (!rx || rx.length < 2) return false;
+    return rx[1] === 0x78 || rx[1] === 0xA5 || rx[0] === 0x78 || rx[0] === 0xA5;
+  },
+
+  async sync(retries = 6) {
+    for (let i = 0; i < retries; i++) {
+      const rx = await this._cmd32(0x1E4B544D, 'KTM sync');
+      if (this.staticAck(rx)) return true;
+      await sleep(200);
+    }
+    return false;
+  },
+
+  async version() {
+    const rx = await this._cmd32(0xF0564552, 'VER');
+    if (!this.staticAck(rx)) return null;
+    return { byte0: rx[2], byte1: rx[3] };
+  },
+
+  async key() {
+    const rx = await this._cmd32(0xF04B4559, 'KEY');
+    return this.staticAck(rx);
+  },
+
+  async chipId() {
+    const rx = await this._cmd32(0xD2434850, 'CHP');
+    if (!rx || rx.length < 8) return null;
+    // frame = [?][id0 id1 id2][name…][sum8]; 0x12 marker seen at resp[4] upstream,
+    // at [0] in vendor logs — search for the ASCII name instead.
+    const txt = Array.from(rx).filter(c => c >= 0x20 && c < 0x7F);
+    const s = String.fromCharCode(...txt).replace(/[^0-9A-Za-z._-]/g, '');
+    return s.length >= 4 ? s : null;
+  },
+
+  async configure(chipType = 0x10, flashBase = 0x6000, sectorSize = 0x0E, timing = 0x15) {
+    const cmd = new Uint8Array([0x2D, 0x29, 0x00, chipType, sectorSize, timing,
+      flashBase & 0xFF, (flashBase >> 8) & 0xFF, 0x00, 0xBC]);
+    log(`BOOT TX → ${fmt(cmd)}  (CFG)`, 'tx');
+    const rx = await this._feature(cmd);
+    log(`BOOT RX ← ${rx?.length ? fmt(rx) : '(none)'}`, 'rx');
+    return this.staticAck(rx);
+  },
+
+  async powerOn() { return this.staticAck(await this._cmd32(0x3C50574F, 'PWO')); },
+  async start()   { return this.staticAck(await this._cmd32(0x4B535441, 'KSTA')); },
+  async stop()    { await this._cmd32(0x96535450, 'STP'); },
+
+  async writeBlock(blockAddr, data, subtype = 0x00, region = 0x00E4) {
+    const padded = new Uint8Array(this.BLOCK);
+    padded.set(data.subarray(0, Math.min(this.BLOCK, data.length)));
+    const pkt = new Uint8Array(6 + this.BLOCK);
+    const dv = new DataView(pkt.buffer);
+    pkt[0] = 0x69;
+    pkt[1] = subtype;
+    dv.setUint16(2, region & 0xFFFF, true);
+    dv.setUint16(4, blockAddr & 0xFFFF, true);
+    pkt.set(padded, 6);
+    log(`BOOT TX → 0x69 block addr=${hex(blockAddr, 4)} sub=${hex(subtype, 2)} region=${hex(region, 4)} (${this.BLOCK}B)`, 'tx');
+    const rx = await this._feature(pkt, 5000);
+    log(`BOOT RX ← ${rx?.length ? fmt(rx.subarray(0, 8)) : '(none)'}`, 'rx');
+    return this.staticAck(rx);
+  },
+
+  async flash(binBytes, onProgress) {
+    const size = binBytes.length;
+    log(`BOOT: flashing ${size} bytes…`, 'inf');
+    if (!await this.sync()) throw new Error('Bootloader sync failed — is the device in boot mode?');
+    const ver = await this.version();
+    log(`BOOT: bootloader version ${ver ? JSON.stringify(ver) : '?'}`, 'inf');
+    if (!await this.key()) throw new Error('KEY unlock failed.');
+    const cid = await this.chipId();
+    log(`BOOT: chip ID = ${cid ?? '?'}`, 'inf');
+    if (!await this.configure()) throw new Error('CFG failed.');
+    if (!await this.powerOn()) throw new Error('PWO failed.');
+    if (!await this.start()) throw new Error('KSTA failed.');
+
+    let ba = 0x80;
+    const meta = this.makeMeta(cid, size);
+    if (!await this.writeBlock(ba, meta, 0xF0)) throw new Error('meta block write failed.');
+    ba += 4;
+
+    const n = Math.ceil(size / this.BLOCK);
+    for (let i = 0; i < size; i += this.BLOCK) {
+      if (!await this.writeBlock(ba, binBytes.subarray(i, i + this.BLOCK)))
+        throw new Error(`data block @${hex(ba, 4)} write failed.`);
+      ba += 4;
+      onProgress?.(Math.min(i + this.BLOCK, size) / size);
+    }
+
+    // config block (region 0xE2) then signature block (region 0xE0)
+    if (!await this.writeBlock(ba, new Uint8Array(this.BLOCK), 0x90, 0x00E2))
+      log('BOOT: config block write failed (continuing).', 'warn');
+    const sig = this.makeSig(cid, binBytes);
+    if (!await this.writeBlock(0x80, sig, 0x10, 0x00E0))
+      log('BOOT: signature block write failed (continuing).', 'warn');
+
+    await this.stop();
+    onProgress?.(1);
+    log('BOOT: flash sequence complete — replug the device.', 'ok');
+  },
+
+  makeMeta(chipId, fwSize) {
+    const m = new Uint8Array(this.BLOCK);
+    const dv = new DataView(m.buffer);
+    const cid = (chipId || '').slice(0, 15);
+    for (let i = 0; i < cid.length; i++) m[i] = cid.charCodeAt(i);
+    const put = (str, off) => {
+      for (let i = 0; i < str.length && off + i < m.length; i++) m[off + i] = str.charCodeAt(i);
+    };
+    put('Size', 0x08);
+    dv.setUint32(0x0C, fwSize, true);
+    put('fw', 0x10);
+    put(new Date().toISOString().slice(0, 10), 0x14);
+    put('ENTY', 0x60);
+    dv.setUint32(0x64, 0x0008B000, true);
+    dv.setUint32(0x68, 0x0008B000, true);
+    return m;
+  },
+
+  makeSig(chipId, fw) {
+    const s = new Uint8Array(this.BLOCK);
+    const name = 'KT_lnv1b_flash_1';
+    for (let i = 0; i < name.length; i++) s[i] = name.charCodeAt(i);
+    // CRC32 (zlib) over the firmware
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < fw.length; i++) {
+      c ^= fw[i];
+      for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1));
+    }
+    new DataView(s.buffer).setUint32(16, (c ^ 0xFFFFFFFF) >>> 0, true);
+    return s;
+  },
+};
+
+
 const $    = id => document.getElementById(id);
 const esc  = s  => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const fmt  = a  => Array.from(a).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
@@ -1071,11 +1491,20 @@ function markClean(i) { $(`band-${i}`)?.classList.remove('changed'); }
 
 function setControlsEnabled(on) {
   ['btn-eq-on', 'btn-eq-off', 'global-gain', 'btn-read-all', 'btn-write-all',
-   'btn-reset-eq', 'btn-save-preset', 'btn-export', 'btn-import']
+   'btn-reset-eq', 'btn-save-preset', 'btn-export', 'btn-import',
+   'btn-bank-dac', 'btn-bank-adc']
     .forEach(id => { const el = $(id); if (el) el.disabled = !on; });
   document.querySelectorAll('.band-send-btn, .vslider, .band-controls input, .band-controls select,'
     + ' .volume-select, #dig-adc')
     .forEach(el => { el.disabled = !on; });
+}
+
+function updateBootUI() {
+  const c = $('btn-boot-connect'), d = $('btn-boot-disconnect'), f = $('btn-boot-flash');
+  if (!c) return;
+  c.disabled = BOOT.connected;
+  d.disabled = !BOOT.connected;
+  f.disabled = !BOOT.connected || !FwBin.buf;
 }
 
 function refreshVolumeUI() {
@@ -1087,8 +1516,8 @@ function refreshVolumeUI() {
 }
 
 function updateEqToggleUI() {
-  $('btn-eq-on').classList.toggle('active',  state.eqEnabled);
-  $('btn-eq-off').classList.toggle('active', !state.eqEnabled);
+  $('btn-eq-on').classList.toggle('active',  !!state.eqEnabled[state.bank]);
+  $('btn-eq-off').classList.toggle('active', !state.eqEnabled[state.bank]);
 }
 
 function renderLocalPresets() {
@@ -1129,7 +1558,7 @@ async function sendBand(i) {
   const b = state.bands[i];
   pushUndo(i);
   const { aReg, bReg } = encodeBand(b.freq, b.gain, b.q, b.filterType);
-  const addrA = hid.reg('EQ_DAC') + i * hid.reg('EQ_STRIDE');
+  const addrA = eqBase() + i * hid.reg('EQ_STRIDE');
   const addrB = addrA + 1;
   try {
     await writeRegister(addrA, aReg);
@@ -1166,11 +1595,9 @@ async function onConnect() {
     dbg('── onConnect: reading device state ──');
 
     // Rebuild bands from the active profile (KT0231H = 6, KT02H20 = 5)
-    state.bandCount = hid.profile.defaultBandCount ?? hid.reg('EQ_BANDS');
-    const freqs = profileFreqs();
-    const dq = profileDefaultQ();
-    state.bands = Array.from({ length: state.bandCount },
-      (_, i) => makeBand(freqs[i] ?? 1000, i, dq));
+    state.bankCount = hid.profile.defaultBandCount ?? hid.reg('EQ_BANDS');
+    state.bank = 'DAC';
+    state.banks = makeBanks();
 
     try {
       const ver = await readString(hid.profile.versionAddr ?? REG.VERSION,
@@ -1182,10 +1609,9 @@ async function onConnect() {
       throw new Error('Device did not respond to register read.');
     }
 
-    // EQ bands are mandatory; volume/PGA regs are best-effort because the
+    // EQ banks are mandatory; volume/PGA regs are best-effort because the
     // KT0231H PGA/DIG addresses are unverified (carried over from KT02H20).
-    await fetchEqSwitch();
-    await fetchAllBands();
+    await fetchAllBanks();
     for (const [label, fn] of [
       ['DIG_DAC', fetchGlobalGain], ['PGA_ADC', fetchPGAADC],
       ['PGA_DAC', fetchPGADAC], ['DIG_ADC', fetchDigADC],
@@ -1198,6 +1624,7 @@ async function onConnect() {
     buildBandUI();
     state.bands.forEach((_, i) => refreshBandUI(i));
     visualizer.bands = state.bands;
+    updateBankUI();
 
     $('global-gain').value = state.globalGain;
     $('global-gain-val').textContent = state.globalGain.toFixed(1) + ' dB';
@@ -1208,7 +1635,7 @@ async function onConnect() {
     visualizer?.draw(state.bands);
 
     setStatus('Device ready.', 'ok');
-    log(`All state loaded — ${state.bandCount} bands.`);
+    log(`All state loaded — ${Object.keys(state.banks).join('+')} banks, ${state.bands.length} bands each.`);
   } catch (err) {
     setStatus('Connection failed: ' + err.message, 'error');
     log('Connection failed: ' + err.message, 'err');
@@ -1240,10 +1667,9 @@ async function onDisconnect() {
 }
 
 async function readAll() {
-  setStatus('Reading all bands…', 'working');
+  setStatus('Reading all banks…', 'working');
   try {
-    await fetchEqSwitch();
-    await fetchAllBands();
+    await fetchAllBanks();
     for (const fn of [fetchGlobalGain, fetchPGAADC, fetchPGADAC, fetchDigADC]) {
       try { await fn(); }
       catch (err) { log(`Volume read failed (unverified reg?): ${err.message}`, 'warn'); }
@@ -1255,7 +1681,7 @@ async function readAll() {
     updateEqToggleUI();
     visualizer?.draw(state.bands);
     setStatus('Read complete.', 'ok');
-    log('Read complete.');
+    log('Read complete (all banks).');
   } catch (err) {
     setStatus('Read error: ' + err.message, 'error');
     log('Read error: ' + err.message, 'err');
@@ -1263,13 +1689,13 @@ async function readAll() {
 }
 
 async function writeAll() {
-  setStatus('Writing all bands…', 'working');
+  setStatus(`Writing all ${state.bank} bands…`, 'working');
   try {
-    for (let i = 0; i < state.bandCount; i++) {
+    for (let i = 0; i < state.bands.length; i++) {
       const b = state.bands[i];
       const { aReg, bReg } = encodeBand(b.freq, b.gain, b.q, b.filterType);
-      await writeRegister(hid.reg('EQ_DAC') + i * hid.reg('EQ_STRIDE'),     aReg);
-      await writeRegister(hid.reg('EQ_DAC') + i * hid.reg('EQ_STRIDE') + 1, bReg);
+      await writeRegister(eqBase() + i * hid.reg('EQ_STRIDE'),     aReg);
+      await writeRegister(eqBase() + i * hid.reg('EQ_STRIDE') + 1, bReg);
       markClean(i);
     }
     setStatus('Write complete.', 'ok');
@@ -1282,15 +1708,25 @@ async function writeAll() {
 
 function applyLocalPreset(name, preset) {
   preset.bands?.forEach((b, i) => {
-    if (!state.bands[i]) return;
-    Object.assign(state.bands[i], b);
-    refreshBandUI(i); markDirty(i);
+    if (!state.banks.DAC[i]) return;
+    Object.assign(state.banks.DAC[i], b);
   });
+  if (preset.adcBands && state.banks.ADC) {
+    preset.adcBands.forEach((b, i) => {
+      if (!state.banks.ADC[i]) return;
+      Object.assign(state.banks.ADC[i], b);
+    });
+  }
+  state.bands.forEach((_, i) => { refreshBandUI(i); markDirty(i); });
   if (preset.globalGain != null) {
     state.globalGain = preset.globalGain;
     $('global-gain').value = state.globalGain;
     $('global-gain-val').textContent = state.globalGain.toFixed(1) + ' dB';
   }
+  if (preset.pgaADC != null) state.pgaADC = preset.pgaADC;
+  if (preset.pgaDAC != null) state.pgaDAC = preset.pgaDAC;
+  if (preset.digADC != null) state.digADC = preset.digADC;
+  refreshVolumeUI();
   visualizer?.draw(state.bands);
   toast(`Preset "${name}" loaded — click Write All Bands.`, 'info');
   log(`Preset "${name}" applied.`);
@@ -1300,13 +1736,15 @@ function applyLocalPreset(name, preset) {
 function resetEQ() {
   const freqs = profileFreqs();
   const dq = profileDefaultQ();
-  state.bands.forEach((b, i) => {
-    b.gain = 0; b.q = dq;
-    b.freq = freqs[i] ?? 1000; b.filterType = 0;
-    refreshBandUI(i); markDirty(i);
-  });
+  for (const bank of Object.keys(state.banks)) {
+    state.banks[bank].forEach((b, i) => {
+      b.gain = 0; b.q = dq;
+      b.freq = freqs[i] ?? 1000; b.filterType = 0;
+    });
+  }
+  state.bands.forEach((_, i) => { refreshBandUI(i); markDirty(i); });
   visualizer?.draw(state.bands);
-  log('EQ reset locally.');
+  log('EQ reset locally (both banks).');
   setStatus('EQ reset — click Write All Bands to apply.', 'working');
 }
 
@@ -1380,19 +1818,19 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-eq-on').addEventListener('click', async () => {
     if (!hid.connected) return;
     try {
-      const enAddr = hid.reg('EQ_DAC_EN');
+      const enAddr = eqEnableAddr();
       const val = await readRegister(enAddr);
       await writeRegister(enAddr, val | 1);
-      state.eqEnabled = true; updateEqToggleUI(); setStatus('DAC EQ ON.', 'ok');
+      state.eqEnabled[state.bank] = true; updateEqToggleUI(); setStatus(`${state.bank} EQ ON.`, 'ok');
     } catch (err) { log('EQ ON error: ' + err.message, 'err'); }
   });
   $('btn-eq-off').addEventListener('click', async () => {
     if (!hid.connected) return;
     try {
-      const enAddr = hid.reg('EQ_DAC_EN');
+      const enAddr = eqEnableAddr();
       const val = await readRegister(enAddr);
       await writeRegister(enAddr, val & ~1);
-      state.eqEnabled = false; updateEqToggleUI(); setStatus('DAC EQ OFF.', 'ok');
+      state.eqEnabled[state.bank] = false; updateEqToggleUI(); setStatus(`${state.bank} EQ OFF.`, 'ok');
     } catch (err) { log('EQ OFF error: ' + err.message, 'err'); }
   });
 
@@ -1458,6 +1896,116 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-write-all').addEventListener('click', writeAll);
   $('btn-reset-eq').addEventListener('click', resetEQ);
 
+  // ── EQ bank toggle (KT0231H second bank) ──
+  $('btn-bank-dac')?.addEventListener('click', () => switchBank('DAC'));
+  $('btn-bank-adc')?.addEventListener('click', () => switchBank('ADC'));
+
+  // ── Firmware BIN patcher (persistence) ──
+  $('btn-fw-load')?.addEventListener('click', () => $('file-fw')?.click());
+  $('file-fw')?.addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const info = await FwBin.load(file);
+      $('fw-info').textContent = `${file.name} — ${info.size} B, ` +
+        `DAC table ${info.dacOff >= 0 ? hex(info.dacOff, 4) : 'NOT FOUND'}, ` +
+        `ADC table ${info.adcOff >= 0 ? hex(info.adcOff, 4) : 'not found'}`;
+      log(`Firmware BIN loaded: ${file.name} (${info.size} bytes). ` +
+          `DAC EQ @ ${info.dacOff >= 0 ? hex(info.dacOff, 4) : '?'}; ` +
+          `ADC EQ @ ${info.adcOff >= 0 ? hex(info.adcOff, 4) : '?'}`, 'inf');
+      if (info.dacOff < 0) {
+        toast('EQ table not located in this BIN — patching disabled.', 'warn', 5000);
+        log('EQ table pattern not found — do NOT flash this image.', 'warn');
+      } else {
+        $('btn-fw-patch').disabled = false;
+        $('btn-fw-export').disabled = false;
+      }
+      const cur = FwBin.readTable(info.dacOff);
+      if (cur) log('Image DAC EQ: ' + cur.map(b =>
+        `${b.freq}Hz ${b.gain >= 0 ? '+' : ''}${b.gain.toFixed(1)}dB Q${b.q.toFixed(2)}`).join(' | '), 'inf');
+    } catch (err) {
+      log('BIN load failed: ' + err.message, 'err');
+    }
+    e.target.value = '';
+    updateBootUI();
+  });
+
+  $('btn-fw-patch')?.addEventListener('click', () => {
+    if (!FwBin.buf || FwBin.dacOff < 0) { toast('Load a firmware BIN first.', 'warn'); return; }
+    FwBin.patchTable(FwBin.dacOff, state.banks.DAC);
+    if (FwBin.adcOff >= 0 && state.banks.ADC) FwBin.patchTable(FwBin.adcOff, state.banks.ADC);
+    log(`Patched EQ tables in ${FwBin.name}: DAC@${hex(FwBin.dacOff, 4)}` +
+        (FwBin.adcOff >= 0 ? `, ADC@${hex(FwBin.adcOff, 4)}` : '') + '. Export the BIN now.', 'ok');
+    toast('Image patched — export _new.bin below.', 'ok');
+  });
+
+  $('btn-fw-export')?.addEventListener('click', () => {
+    if (!FwBin.buf) { toast('Load a firmware BIN first.', 'warn'); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(FwBin.exportBlob());
+    a.download = FwBin.name.replace(/\.bin$/i, '') + '_new.bin';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    log('Patched BIN exported — flash it with the Boot panel or KT_BOOT_TOOL.', 'ok');
+  });
+
+  // ── Boot-mode flasher ──
+  $('btn-boot-connect')?.addEventListener('click', async () => {
+    if (!navigator.hid) { toast('WebHID unavailable.', 'error'); return; }
+    try {
+      const name = await BOOT.connect();
+      log(`Bootloader connected: ${name}`, 'ok');
+      setStatus('Bootloader connected. Load the unit\'s own patched BIN before flashing.', 'working');
+    } catch (err) {
+      log('Boot connect failed: ' + err.message, 'err');
+    }
+    updateBootUI();
+  });
+  $('btn-boot-disconnect')?.addEventListener('click', async () => {
+    await BOOT.disconnect(); updateBootUI(); log('Bootloader disconnected.', 'inf');
+  });
+  $('btn-boot-flash')?.addEventListener('click', async () => {
+    if (!BOOT.connected || !FwBin.buf) return;
+    const t = $('boot-confirm').value.trim();
+    if (t !== 'FLASH') {
+      toast('Type FLASH in the confirm box to enable flashing.', 'warn');
+      return;
+    }
+    if (!confirm('Write the patched image to the bootloader now?\n\n' +
+                 'Only flash the unit\'s OWN firmware backup — never a foreign image.\n' +
+                 'Do not unplug during the write.')) return;
+    $('boot-progress').style.display = 'block';
+    setStatus('Flashing bootloader…', 'working');
+    try {
+      await BOOT.flash(FwBin.buf, p => {
+        $('boot-bar').style.width = `${Math.round(p * 100)}%`;
+      });
+      setStatus('Flash complete — replug the device.', 'ok');
+      toast('Flash sequence done. Replug the dongle.', 'ok', 6000);
+    } catch (err) {
+      log('BOOT flash failed: ' + err.message, 'err');
+      setStatus('Flash failed: ' + err.message, 'error');
+      toast('Flash failed — see log.', 'error', 6000);
+    }
+    $('boot-confirm').value = '';
+    $('boot-progress').style.display = 'none';
+    $('boot-bar').style.width = '0%';
+    updateBootUI();
+  });
+  $('btn-boot-info')?.addEventListener('click', async () => {
+    if (!BOOT.connected) { toast('Connect the bootloader first.', 'warn'); return; }
+    try {
+      if (!await BOOT.sync()) throw new Error('no sync (0x78) — device not in boot mode?');
+      const ver = await BOOT.version();
+      const cid = await BOOT.chipId();
+      log(`BOOT info: version=${JSON.stringify(ver)} chip=${cid ?? '?'}`, 'ok');
+      $('boot-info').textContent = `ver ${JSON.stringify(ver)} · chip ${cid ?? '?'}`;
+      setStatus('Bootloader handshake OK.', 'ok');
+    } catch (err) {
+      log('BOOT info failed: ' + err.message, 'err');
+      setStatus('Boot handshake failed: ' + err.message, 'error');
+    }
+  });
+
   $('btn-save-preset').addEventListener('click', () => {
     const name = $('preset-name').value.trim();
     if (!name) { toast('Enter a preset name first.', 'warn'); return; }
@@ -1490,11 +2038,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-clear-log').addEventListener('click', () => { $('log').innerHTML = ''; });
 
   // ── INIT ──
+  state.banks = makeBanks();
   buildBandUI();
   setControlsEnabled(false);
   renderLocalPresets();
   visualizer = new EQVisualizer('eq-canvas');
   visualizer.bands = state.bands;
+  updateBankUI();
+  updateBootUI();
   (() => {
     const dSend = {};
     visualizer.onBandChange = (i) => {

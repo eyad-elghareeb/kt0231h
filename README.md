@@ -4,7 +4,9 @@ Browser-based parametric EQ controller for **KTMicro** USB audio DSP dongles/cab
 Goal: fully working on all three chips — **KT0231H**, **KT0211L**, **KT02H20**.
 
 Forked from https://github.com/gxcreator/kt02h20-control. Protocol description:
-https://github.com/gxcreator/ktmicro-tools/tree/master
+[`PROTOCOL.md`](PROTOCOL.md) — complete run-mode + bootloader reference reverse
+engineered from the vendor `KT_USB_APP.exe` / `KT_BOOT_TOOL_1.0.58.exe` binaries
+and their hex logs.
 
 ## Support matrix
 
@@ -12,23 +14,51 @@ https://github.com/gxcreator/ktmicro-tools/tree/master
 |------|---------|--------|-----------|------------|
 | KT0231H | `0x31B2:0x1132` | 6 bands @ `0x35–0x40`, EN @ `0x34` | `0x4F` | Hardware-verified (dump + write/readback/restore, 2026-09-21) |
 | KT0211L | `0x31B2:0x0111` | 5 bands @ `0x26–0x2F`, EN @ `0x24` | `0x03` | Hardware-verified (full dump + write ACK, 2026-09-21; seen as `CDS.KT USB Audio`, FW `CDSV100.003`) |
-| KT02H20 | `0x31B2:0x0111` | 5 bands @ `0x26–0x2F`, EN @ `0x24` | `0x03` | From upstream repo, **no hardware on hand — untested in this fork** |
+| KT02H20 | `0x31B2:0x0111` | 5 bands @ `0x26–0x2F`, EN @ `0x24` | `0x03` | Upstream-verified (ktmicro-tools, real hardware) |
 
 KT0211L and KT02H20 share a VID:PID, so the app picks the profile by product
 name first (`CDS…`/`0211…` → KT0211L, `KT02H20…`/`JM12…` → KT02H20) and falls
 back to VID:PID (a name-wiped `0x0111` device lands on KT02H20, which is
 register-identical for DAC EQ).
 
+## What's new in v7 (this fork)
+
+- **KT0231H ADC bank in the UI** — the second 6-band bank (EN `0x41`, bands
+  `0x42–0x4D`) gets its own DAC/ADC toggle; Read/Write/toggle act on the
+  selected bank, presets can carry both banks.
+- **Volume controls vendor-confirmed** — `KT_USB_APP 1.0.17` + upstream
+  register map pin the semantics: `0x3A` A_ADC PGA (idx → 0/−6/8/14/20/26/32/44 dB),
+  `0x3B` A_DAC PGA (0 = mute, 1..15 → 1.5·(i−1)−18 dB), `0x65` DIG_ADC,
+  `0x66` DIG_DAC (byte0 DACL, byte1 DACR on stereo models). Solid on
+  KT0211L/KT02H20; on KT0231H those addresses are EQ regs, volume stays
+  best-effort there.
+- **Firmware persistence (BIN patch)** — load the unit's *own* firmware BIN,
+  the app pattern-locates the EQ tables (JA11-class hint: DAC `0x106A`,
+  ADC `0x109A`; entry = 8 B `[freq u16][Q u16][gain s16][type u16]`), patches
+  the current EQ in and exports `*_new.bin` for flashing. It refuses to patch
+  when the tables can't be found.
+- **Boot-mode flasher** — implements the KTMicro bootloader protocol
+  (`KTM` handshake, `VER/KEY/CHP/CFG/PWO/KSTA`, `0x69` block writes, `STP`)
+  over WebHID feature reports against `31B2:0101`. Double-gated (type-FLASH +
+  confirm). Code is untested on hardware — read the warnings before use.
+- **`PROTOCOL.md`** — the full byte-level reverse engineering (run mode,
+  boot mode, image layout, vendor binary internals, open questions).
+- `scripts/` — the Python RE toolchain used: log parser, checksum cracker,
+  PE string/xref/disassembly helpers, firmware-image reconstructor.
+
 ## Quick start
 
 1. Open the `index.html` Web UI in Chrome or Edge desktop (WebHID isn't supported in Firefox/Safari).
 2. Click "Connect USB", select the KT USB device (profile is shown in the header after connect).
-3. Read/write the DAC EQ, toggle EQ on/off, adjust digital DAC gain.
+3. Read/write the DAC (and on KT0231H the ADC) EQ, toggle EQ on/off, adjust digital DAC gain.
+4. For persistence: Firmware Persistence card → load your unit's BIN → Patch →
+   Export → Boot Mode card (or the vendor `KT_BOOT_TOOL`) to reflash.
 
 > Linux: needs a udev rule for `/dev/hidraw*` access. If `device.open()` throws `NotAllowedError`, add:
 > ```
 > SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="1132", TAG+="uaccess"
 > SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="0111", TAG+="uaccess"
+> SUBSYSTEM=="hidraw", ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="0101", TAG+="uaccess"
 > ```
 > to `/etc/udev/rules.d/99-kt0231h.rules`, then `sudo udevadm control --reload && sudo udevadm trigger`.
 
@@ -45,29 +75,24 @@ per-band A/B encoding:
 |-----|-----|---------|
 | 52 | 0x34 | DAC EQ enable (= 1) |
 | 53–64 | 0x35–0x40 | DAC bands #0–#5 (freq&gain / type&Q pairs) |
-| 65 | 0x41 | Second-bank (ADC side) EQ enable (= 1) |
-| 66–77 | 0x42–0x4D | Second-bank bands #0–#5, same defaults |
+| 65 | 0x41 | ADC-side bank EQ enable (= 1) |
+| 66–77 | 0x42–0x4D | ADC-side bank bands #0–#5, same defaults |
 
-## Known shortcomings (honest list, 2026-09-22)
+## Remaining known gaps (honest list, post-RE)
 
-1. **No persistence on any chip (biggest gap).** HID register writes go to DSP
-   RAM only — unplug/replug wipes everything. Reverse-engineering (static
-   disassembly of the vendor `KT_USB_APP.exe`: HID layer is `WriteFile`/
-   `ReadFile` only, no `HidD`/feature reports, no hidden save command found;
-   vendor's own docs) shows the official persist flow is **Save-BIN +
-   reflash with `KT_BOOT_TOOL`**, not a run-mode command. Persist image
-   layout (from `JA11_V2.2` vs `JA11_V2.2_Ellyn` diff): DAC table at BIN
-   `0x106A` (5×8 bytes `[freq u16][Q u16][gain s16][type u16]`), ADC table at
-   `0x109A`. ⚠️ Never flash a foreign BIN (e.g. JA11 image onto a KT0211L
-   unit) — a persist-flash must patch the unit's *own* firmware backup.
-2. **KT0231H volume regs unknown.** `0x3A/0x3B` are EQ regs on this chip (not
-   PGA) and `0x65/0x66` read zero — volume controls are best-effort and may
-   do nothing. The second (ADC-side) bank is not exposed in the UI yet.
-3. **KT0211L/KT02H20 EQ-enable reads `3`, not `1`.** Bit1 meaning unknown; the
-   app sets/clears bit0 only and preserves the rest.
-4. **KT02H20 never tested on hardware here** — profile kept from upstream.
-5. **The `0x43` handshake must not be sent** (stalls the KT0231H HID pipe);
-   reads/writes work without it.
-6. Vendor `KT_USB_APP` could not see the test dongle in its device list
-   (only KB/mice), so vendor-SYNC behavior is unverified — and its device
-   list, not ours, is the suspect there (our HID access works fine).
+1. **Persistence requires a reflash by design.** No run-mode save command
+   exists in the vendor stack (confirmed by disassembly); the app now
+   implements the same Save-BIN + boot-reflash flow the vendor uses. The
+   boot flasher itself is **untested on hardware** — it follows the
+   community-verified upstream format (512 B blocks, no tail).
+2. **KT0231H volume regs still unknown** (0x3A/0x3B are EQ regs there,
+   0x65/0x66 read zero) — controls are best-effort on that chip only.
+3. **KT0211L/KT02H20 EQ-enable reads `3`** — bit1 meaning unknown; app
+   preserves it (writes `val|1` / `val&~1`).
+4. **Vendor `0x69` block tail** (4 bytes per 1024 B block) not fully cracked —
+   upstream format without tail is hardware-proven; captured tails + analysis
+   in `PROTOCOL.md` §7 for future work.
+5. **The `0x43` handshake must not be sent** on KT0231H (stalls the HID pipe);
+   the app never sends it.
+6. Vendor `KT_USB_APP` device list skipped the test dongle because of its
+   keyboard/mouse filter heuristics (disassembled) — not a protocol issue.

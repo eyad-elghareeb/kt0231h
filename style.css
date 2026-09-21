@@ -382,3 +382,33 @@ input.vslider::-webkit-slider-thumb { width: 14px; height: 14px; }
     min-width: 88px;
   }
 }
+
+/* ── v7: persistence + boot panel ── */
+.hint-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin: 8px 0 10px;
+}
+.hint-text code {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+.boot-progress {
+  height: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.boot-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #ff7a5c);
+  transition: width 0.25s ease;
+}
+.persist-section, .boot-section { border-style: dashed; }

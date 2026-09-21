@@ -43,6 +43,14 @@
         </div>
       </div>
 
+      <div class="control-row" id="bank-toggle" style="display:none">
+        <label class="control-label" title="KT0231H has two independent 6-band banks: DAC (0x34/0x35-0x40) and ADC (0x41/0x42-0x4D)">EQ Bank</label>
+        <div class="toggle-group">
+          <button id="btn-bank-dac" class="toggle-btn active" disabled>DAC</button>
+          <button id="btn-bank-adc" class="toggle-btn" disabled>ADC</button>
+        </div>
+      </div>
+
       <div class="control-row btn-row">
         <button id="btn-read-all" class="btn btn-secondary" disabled title="R">Read from Device</button>
         <button id="btn-write-all" class="btn btn-secondary" disabled title="W">Write All Bands</button>
@@ -60,17 +68,17 @@
       <div class="card-title">Volume Controls</div>
 
       <div class="control-row">
-        <label class="control-label" title="Register 0x3A — analog ADC PGA gain">A_ADC PGA</label>
+        <label class="control-label" title="Register 0x3A — analog ADC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): index into {0,-6,8,14,20,26,32,44 dB}">A_ADC PGA</label>
         <select id="pga-adc" class="volume-select" disabled></select>
       </div>
 
       <div class="control-row">
-        <label class="control-label" title="Register 0x3B — analog DAC PGA gain">A_DAC PGA</label>
+        <label class="control-label" title="Register 0x3B — analog DAC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): 0=mute, idx 1..15 → 1.5·(idx−1)−18 dB">A_DAC PGA</label>
         <select id="pga-dac" class="volume-select" disabled></select>
       </div>
 
       <div class="control-row">
-        <label class="control-label" title="Register 0x65 — digital ADC gain, 0.5dB steps">
+        <label class="control-label" title="Register 0x65 byte0 — digital ADC gain, signed 0.5dB steps (vendor-confirmed on KT0211L/KT02H20)">
           DIG_ADC
           <span class="value-badge" id="dig-adc-val">+0.0 dB</span>
         </label>
@@ -79,7 +87,7 @@
       </div>
 
       <div class="control-row">
-        <label class="control-label" title="Register 0x66 b0 — digital DAC gain, 0.5dB steps (single-DAC model)">
+        <label class="control-label" title="Register 0x66 byte0 — digital DAC gain, signed 0.5dB steps (stereo models: byte0=DACL, byte1=DACR)">
           DIG_DAC Preamp
           <span class="value-badge" id="global-gain-val">0.0 dB</span>
         </label>
@@ -89,8 +97,50 @@
     </section>
 
     <section class="card eq-section">
-      <div class="card-title">Parametric EQ Bands</div>
+      <div class="card-title" id="eq-section-title">Parametric EQ — DAC bank</div>
       <div id="eq-bands" class="eq-bands"></div>
+    </section>
+
+    <section class="card persist-section">
+      <div class="card-title">Firmware Persistence (BIN patch)</div>
+      <p class="hint-text">
+        Register writes live in DSP RAM only — they vanish on replug. The vendor
+        persist flow is: take the unit's <strong>own</strong> firmware backup BIN,
+        patch the EQ tables inside it, then reflash via the Boot panel below (or
+        the vendor <code>KT_BOOT_TOOL</code>). Never flash a foreign BIN.
+      </p>
+      <div class="control-row btn-row">
+        <button id="btn-fw-load" class="btn btn-secondary btn-sm">Load firmware BIN…</button>
+        <input type="file" id="file-fw" accept=".bin" style="display:none" />
+        <button id="btn-fw-patch" class="btn btn-secondary btn-sm" disabled>Patch EQ into image</button>
+        <button id="btn-fw-export" class="btn btn-secondary btn-sm" disabled>Export _new.bin</button>
+      </div>
+      <div id="fw-info" class="hint-text">No BIN loaded. Tables are located by pattern (JA11-class hint: DAC @ 0x106A, ADC @ 0x109A).</div>
+    </section>
+
+    <section class="card boot-section">
+      <div class="card-title">⚠ Boot Mode Flasher (advanced)</div>
+      <p class="hint-text">
+        Speaks the KTMicro bootloader protocol (KTM handshake, 0x69 block writes)
+        over WebHID feature reports. Bootloader enumerates as
+        <code>31B2:0101</code> (enter boot mode per your dongle's instructions —
+        usually hold a button while plugging in). ⚠ Untested code — verify your
+        BIN is the unit's own backup first.
+      </p>
+      <div class="control-row btn-row">
+        <button id="btn-boot-connect" class="btn btn-secondary btn-sm">Connect Bootloader</button>
+        <button id="btn-boot-info" class="btn btn-ghost btn-sm" disabled>Handshake / Info</button>
+        <button id="btn-boot-disconnect" class="btn btn-ghost btn-sm" disabled>Disconnect</button>
+        <span id="boot-info" class="value-badge"></span>
+      </div>
+      <div class="control-row">
+        <label class="control-label">Confirm</label>
+        <input type="text" id="boot-confirm" class="preset-input" placeholder="type FLASH" maxlength="8" />
+        <button id="btn-boot-flash" class="btn btn-danger" disabled>Flash image</button>
+      </div>
+      <div id="boot-progress" class="boot-progress" style="display:none">
+        <div id="boot-bar" class="boot-bar"></div>
+      </div>
     </section>
 
     <section class="card presets-section">
