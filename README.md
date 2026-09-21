@@ -49,10 +49,23 @@ per-band A/B encoding:
 Example from the post: 200 Hz / +6 dB / Q 0.7 low-shelf on filter #0 =
 write `0x00C8003C` to `0x35`, `0x000302BC` to `0x36`.
 
-## Verified vs inferred
+## Verified on hardware (0x31B2:0x1132, 2026-09-21)
 
-- Verified from the post: VID `31B2`, PID `1132`, 6 DAC bands at `0x35–0x40`, encoding, types, factory defaults.
-- Inferred (needs hardware confirmation): EQ-enable `0x33` (= base−2, mirroring KT02H20's `0x24`=`0x26`−2).
-  Volume regs (`PGA_ADC 0x3A`, `PGA_DAC 0x3B`, `DIG_ADC 0x65`, `DIG_DAC 0x66`) are carried
-  over from KT02H20 unverified — the app reads them best-effort so a wrong address logs a
-  warning instead of breaking the EQ workflow. Please report what your hardware shows.
+Live HID probing (reads + distinct-value write/readback/restore) confirmed and
+corrected the map above:
+
+- **Writes succeed with status `0x4F`, not `0x03`.** The old code treated every
+  write as failed (`ACK=79`) while the value was actually stored. The app now
+  accepts `0x4F` as the KT0231H write-ACK (per-profile `writeAck`).
+- **EQ-enable is `0x34`** (= base−1), currently `1`. The earlier `0x33` guess was wrong.
+- **Second 6-band bank at `0x42–0x4D`, enable at `0x41`** (= 1), same factory defaults
+  (ADC side; not yet exposed in the UI).
+- Version string at `0x06` (reads e.g. `0.0.1…`), VID:PID at `0x1B`, serial at
+  `0x24–0x2A`, product string at `0x2C–0x30`, MAGIC `0x12345678` at `0x60`.
+- The `0x43` handshake is NOT required (and stalls the HID pipe on this chip) —
+  reads/writes work without it.
+
+Still unknown: volume regs. `0x3A/0x3B` are EQ band regs here (not PGA), and
+`0x65/0x66` read `0x00000000`. PGA/DIG addresses from KT02H20 are kept as
+best-effort reads only, so a wrong address logs a warning instead of breaking
+the EQ workflow.

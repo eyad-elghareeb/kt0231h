@@ -136,14 +136,19 @@ class CommandQueue {
 /* ════════════════════════════════════════════════════════════
    § 3  DEVICE PROFILES
 ════════════════════════════════════════════════════════════ */
-/* KT0231H register map (ASR post #560, user CedarX, Nov 2025 — KZ cable,
-   VID 0x31B2 PID 0x1132). DAC PEQ = 6 bands @ 0x35-0x40, same A/B encoding
-   as KT02H20. Factory defaults: freqs 61/122/184/248/316/392 Hz, 0 dB,
-   Peak, Q 0.700. EQ-enable 0x33 is INFERRED from the KT02H20 block layout
-   (enable = base-2: 0x24=0x26-2 on KT02H20 → 0x33=0x35-2 here) — NOT in the
-   source post, needs hardware confirmation. PGA/DIG regs below are carried
-   over from KT02H20 and likewise UNVERIFIED on KT0231H (reads are
-   best-effort, see onConnect/readAll). */
+/* KT0231H register map — ASR post #560 (CedarX, Nov 2025) PLUS live hardware
+   verification on 0x31B2:0x1132 (2026-09-21, hidapi register dump + write test):
+   - DAC PEQ = 6 bands @ 0x35-0x40, enable @ 0x34 (= base-1, NOT base-2 as on
+     KT02H20). Factory defaults: 61/122/184/248/316/392 Hz, 0 dB, Peak, Q 0.700.
+   - Second 6-band bank @ 0x42-0x4D, enable @ 0x41, same defaults (ADC side).
+   - WRITE SUCCESS CODE IS 0x4F, not 0x03 — writes apply fine, only the ACK
+     byte differs (proven by distinct-value write + readback + restore).
+   - Version string @ 0x06, VID:PID @ 0x1B, serial @ 0x24, product @ 0x2C,
+     MAGIC 0x12345678 @ 0x60. The 0x43 handshake is NOT needed (it stalls the
+     HID pipe on this chip) — reads/writes work without it.
+   - Volume regs still UNKNOWN: 0x3A/0x3B are EQ regs here (not PGA), 0x65/0x66
+     read 0x00000000. PGA/DIG entries below are KT02H20 carry-overs read
+     best-effort only. */
 const FILTER_TYPES_5 = [
   { value: 0, label: 'Peak' },      { value: 1, label: 'LPF' },
   { value: 2, label: 'HPF' },       { value: 3, label: 'Low Shelf' },
@@ -154,12 +159,14 @@ const PROFILES = {
   'KT0231H': {
     name: 'KT0231H', vid: 0x31B2, pid: 0x1132,
     reportId: RPT_ID, probeReportIds: false,
+    writeAck: 0x4F, // hardware-verified: this chip ACKs writes with 0x4F
     gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
     defaultBandCount: 6,
     defaultFreqs: [61, 122, 184, 248, 316, 392],
     defaultQ: 0.7,
+    versionAddr: 0x06, versionCount: 2,
     reg: {
-      EQ_DAC: 0x35, EQ_DAC_EN: 0x33, EQ_STRIDE: 2, EQ_BANDS: 6,
+      EQ_DAC: 0x35, EQ_DAC_EN: 0x34, EQ_STRIDE: 2, EQ_BANDS: 6,
       PGA_ADC: 0x3A, PGA_DAC: 0x3B, DIG_ADC: 0x65, DIG_DAC: 0x66,
     },
     filterTypes: FILTER_TYPES_5,
@@ -167,10 +174,12 @@ const PROFILES = {
   'KT02H20': {
     name: 'KT02H20', vid: 0x31B2, pid: 0x0111,
     reportId: RPT_ID, probeReportIds: false,
+    writeAck: WRITE_ACK,
     gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
     defaultBandCount: REG.EQ_BANDS,
     defaultFreqs: [60, 230, 910, 3600, 14000],
     defaultQ: 1.0,
+    versionAddr: REG.VERSION, versionCount: 2,
     reg: {
       EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
       EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
@@ -184,10 +193,12 @@ const PROFILES = {
 const DEFAULT_PROFILE = {
   name: 'DEFAULT', vid: null, pid: null,
   reportId: RPT_ID, probeReportIds: true,
+  writeAck: WRITE_ACK,
   gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
   defaultBandCount: REG.EQ_BANDS,
   defaultFreqs: [60, 230, 910, 3600, 14000],
   defaultQ: 1.0,
+  versionAddr: REG.VERSION, versionCount: 2,
   reg: {
     EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
     EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
@@ -436,7 +447,8 @@ async function writeRegister(addr, value) {
   logTx(cmd);
   const resp = await hid.send(cmd, `reg-wr-${addr}`);
   logRx(resp);
-  if (resp.length >= 10 && resp[4] === CMD_WRITE && resp[6] === WRITE_ACK) return;
+  const wantAck = hid.profile.writeAck ?? WRITE_ACK;
+  if (resp.length >= 10 && resp[4] === CMD_WRITE && resp[6] === wantAck) return;
   throw new Error(`Register write failed (0x${addr.toString(16).padStart(2, '0')}, ACK=${resp.length >= 10 ? resp[6] : 'none'})`);
 }
 
@@ -1127,7 +1139,8 @@ async function onConnect() {
       (_, i) => makeBand(freqs[i] ?? 1000, i, dq));
 
     try {
-      const ver = await readString(REG.VERSION, 2);
+      const ver = await readString(hid.profile.versionAddr ?? REG.VERSION,
+                                   hid.profile.versionCount ?? 2);
       dbg(`Chip version: "${ver}"`);
       log(`Chip version: ${ver}`, 'inf');
     } catch (err) {
