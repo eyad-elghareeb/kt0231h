@@ -32,18 +32,14 @@ register-identical for DAC EQ).
   `0x66` DIG_DAC (byte0 DACL, byte1 DACR on stereo models). Solid on
   KT0211L/KT02H20; on KT0231H those addresses are EQ regs, volume stays
   best-effort there.
-- **Firmware persistence (BIN patch)** — load the unit's *own* firmware BIN,
-  the app pattern-locates the EQ tables (JA11-class hint: DAC `0x106A`,
-  ADC `0x109A`; entry = 8 B `[freq u16][Q u16][gain s16][type u16]`), patches
-   the current EQ in and exports `*_new.bin` for flashing. It refuses to patch
-   when the tables can't be found, sets the bank-enable byte (`0x03`) so the
-   flashed EQ is actually active, and warns when the file lacks the KTMicro
-   VID marker. Table layout double-confirmed against the Tanchjim KT0211L
-   factory image (see `PROTOCOL.md` §4).
-- **Boot-mode flasher** — implements the KTMicro bootloader protocol
-  (`KTM` handshake, `VER/KEY/CHP/CFG/PWO/KSTA`, `0x69` block writes, `STP`)
-  over WebHID feature reports against `31B2:0101`. Double-gated (type-FLASH +
-  confirm). Code is untested on hardware — read the warnings before use.
+- **Save to Flash (vendor `0x53` commit)** — the persistence answer: Write All
+  Bands, then one click commits DSP RAM to flash (device reboots).
+  KT0211L/KT02H20 only. See `PROTOCOL.md` §1.
+- **Firmware persistence (BIN patch)** and **Boot-mode flasher** code paths
+  (`FwBin`, `BOOT` in `app.js`) are retained but their UI cards were removed
+  to keep things simple — BIN patch + `KT_BOOT_TOOL` reflash remains the
+  fallback flow. Table layout double-confirmed against the Tanchjim KT0211L
+  factory image (see `PROTOCOL.md` §4).
 - **`PROTOCOL.md`** — the full byte-level reverse engineering (run mode,
   boot mode, image layout, vendor binary internals, open questions).
 - `scripts/` — the Python RE toolchain used: log parser, checksum cracker,
@@ -54,8 +50,8 @@ register-identical for DAC EQ).
 1. Open the `index.html` Web UI in Chrome or Edge desktop (WebHID isn't supported in Firefox/Safari).
 2. Click "Connect USB", select the KT USB device (profile is shown in the header after connect).
 3. Read/write the DAC (and on KT0231H the ADC) EQ, toggle EQ on/off, adjust digital DAC gain.
-4. For persistence: Firmware Persistence card → load your unit's BIN → Patch →
-   Export → Boot Mode card (or the vendor `KT_BOOT_TOOL`) to reflash.
+4. For persistence (KT0211L/KT02H20): Write All Bands → Save to Flash →
+   wait for the reboot → reconnect → Read back to verify.
 
 > Linux: needs a udev rule for `/dev/hidraw*` access. If `device.open()` throws `NotAllowedError`, add:
 > ```

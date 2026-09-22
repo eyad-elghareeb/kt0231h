@@ -102,48 +102,6 @@
       <div id="eq-bands" class="eq-bands"></div>
     </section>
 
-    <section class="card persist-section">
-      <div class="card-title">Firmware Persistence (BIN patch)</div>
-      <p class="hint-text">
-        Register writes live in DSP RAM only — they vanish on replug. The vendor
-        persist flow is: take the unit's <strong>own</strong> firmware backup BIN,
-        patch the EQ tables inside it, then reflash via the Boot panel below (or
-        the vendor <code>KT_BOOT_TOOL</code>). Never flash a foreign BIN.
-      </p>
-      <div class="control-row btn-row">
-        <button id="btn-fw-load" class="btn btn-secondary btn-sm">Load firmware BIN…</button>
-        <input type="file" id="file-fw" accept=".bin" style="display:none" />
-        <button id="btn-fw-patch" class="btn btn-secondary btn-sm" disabled>Patch EQ into image</button>
-        <button id="btn-fw-export" class="btn btn-secondary btn-sm" disabled>Export _new.bin</button>
-      </div>
-      <div id="fw-info" class="hint-text">No BIN loaded. Tables are located by pattern (JA11-class hint: DAC @ 0x106A, ADC @ 0x109A).</div>
-    </section>
-
-    <section class="card boot-section">
-      <div class="card-title">⚠ Boot Mode Flasher (advanced)</div>
-      <p class="hint-text">
-        Speaks the KTMicro bootloader protocol (KTM handshake, 0x69 block writes)
-        over WebHID feature reports. Bootloader enumerates as
-        <code>31B2:0101</code> (enter boot mode per your dongle's instructions —
-        usually hold a button while plugging in). ⚠ Untested code — verify your
-        BIN is the unit's own backup first.
-      </p>
-      <div class="control-row btn-row">
-        <button id="btn-boot-connect" class="btn btn-secondary btn-sm">Connect Bootloader</button>
-        <button id="btn-boot-info" class="btn btn-ghost btn-sm" disabled>Handshake / Info</button>
-        <button id="btn-boot-disconnect" class="btn btn-ghost btn-sm" disabled>Disconnect</button>
-        <span id="boot-info" class="value-badge"></span>
-      </div>
-      <div class="control-row">
-        <label class="control-label">Confirm</label>
-        <input type="text" id="boot-confirm" class="preset-input" placeholder="type FLASH" maxlength="8" />
-        <button id="btn-boot-flash" class="btn btn-danger" disabled>Flash image</button>
-      </div>
-      <div id="boot-progress" class="boot-progress" style="display:none">
-        <div id="boot-bar" class="boot-bar"></div>
-      </div>
-    </section>
-
     <section class="card presets-section">
       <div class="card-title presets-header">
         <span>Local Presets</span>
