@@ -53,6 +53,24 @@ Write status differs **per chip**:
 | KT02H20 / KT0211L | `0x03` | upstream + live (0211L) |
 | KT0231H | `0x4F` | live hardware (2026-09-21) |
 
+### SAVE to flash — `0x53` ('S')
+
+```
+TX: 4B 00 00 00 00  53 00 00 00 00 00
+RX: status byte (payload[6]) = 0x03 or 0x4F
+```
+
+Recovered from `KT_USB_APP.exe` 1.0.17 (function @ `0x546900`, caller
+@ `0xca3eda` → user-facing toast): commits the live DSP RAM state to flash;
+the device typically reboots. The vendor binary accepts **exactly**
+`0x03` (KT02H20-era) or `0x4F` (newer firmware) as success — mirrored in
+our app's `saveToFlash()`. Same Tanchjim-side feature is
+`saveRegData2Flash` ("will reboot device"). Full run-mode inventory of the
+vendor binary (all `WriteFile` packet-TX call sites): commands are exactly
+`{0x43, 0x52, 0x53, 0x57}` — no hidden 4th command. Gated to
+KT0211L/KT02H20 (`0x0111`) in our UI; never sent to KT0231H (unverified
+there).
+
 ### Handshake — `0x43` ('C')
 
 ```

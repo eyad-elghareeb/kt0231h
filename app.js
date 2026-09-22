@@ -48,6 +48,7 @@ const RPT_ID   = 0x4B;
 
 const CMD_READ  = 0x52;  // 'R' — Read Register
 const CMD_WRITE = 0x57;  // 'W' — Write Register (device ACKs with 0x03)
+const CMD_SAVE  = 0x53;  // 'S' — SAVE: commit DSP RAM state to flash (vendor KT_USB_APP fn @0x546900)
 const WRITE_ACK = 0x03;
 
 const REG = Object.freeze({
@@ -551,6 +552,25 @@ async function writeRegister(addr, value) {
   const wantAck = hid.profile.writeAck ?? WRITE_ACK;
   if (resp.length >= 10 && resp[4] === CMD_WRITE && resp[6] === wantAck) return;
   throw new Error(`Register write failed (0x${addr.toString(16).padStart(2, '0')}, ACK=${resp.length >= 10 ? resp[6] : 'none'})`);
+}
+
+/* ── SAVE to flash (0x53 'S') ──
+   Vendor run-mode commit, recovered from KT_USB_APP 1.0.17 (function
+   @0x546900: TX = report 0x4B + payload [addr=0][0x53][0x00][value=0]).
+   The vendor accepts status byte resp[6] == 0x03 (KT02H20-era) OR 0x4F
+   (newer firmware) as success — mirrored exactly here. Commits the live
+   DSP state (EQ, gains) to flash; the device typically reboots, so the
+   caller must reconnect and Read back to verify. Verified statically only
+   (full run-mode inventory of the vendor binary: {0x43,0x52,0x53,0x57});
+   KT0211L/KT02H20 (pid 0x0111) only — never sent to KT0231H. */
+async function saveToFlash() {
+  const cmd = new Uint8Array([0, 0, 0, 0, CMD_SAVE, 0x00, 0, 0, 0, 0]);
+  logTx(cmd);
+  const resp = await hid.send(cmd, 'save-flash');
+  logRx(resp);
+  const st = resp.length >= 10 ? resp[6] : -1;
+  if (st === 0x03 || st === 0x4F) return st;
+  throw new Error(`SAVE rejected (status=${st < 0 ? 'none' : '0x' + st.toString(16)})`);
 }
 
 /* ── EQ band encode/decode ──
@@ -1520,8 +1540,12 @@ function markClean(i) { $(`band-${i}`)?.classList.remove('changed'); }
 function setControlsEnabled(on) {
   ['btn-eq-on', 'btn-eq-off', 'global-gain', 'btn-read-all', 'btn-write-all',
    'btn-reset-eq', 'btn-save-preset', 'btn-export', 'btn-import',
-   'btn-bank-dac', 'btn-bank-adc']
+   'btn-bank-dac', 'btn-bank-adc', 'btn-save-flash']
     .forEach(id => { const el = $(id); if (el) el.disabled = !on; });
+  // SAVE command is verified for KT0211L/KT02H20 (pid 0x0111) only — never
+  // offer it on KT0231H or unknown profiles.
+  const sf = $('btn-save-flash');
+  if (sf) sf.style.display = (on && hid.profile && hid.profile.pid === 0x0111) ? '' : 'none';
   document.querySelectorAll('.band-send-btn, .vslider, .band-controls input, .band-controls select,'
     + ' .volume-select, #dig-adc')
     .forEach(el => { el.disabled = !on; });
@@ -1860,6 +1884,18 @@ document.addEventListener('DOMContentLoaded', () => {
       await writeRegister(enAddr, val & ~1);
       state.eqEnabled[state.bank] = false; updateEqToggleUI(); setStatus(`${state.bank} EQ OFF.`, 'ok');
     } catch (err) { log('EQ OFF error: ' + err.message, 'err'); }
+  });
+
+  $('btn-save-flash')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    if (!confirm('Commit the current DSP state (EQ + gains) to the chip\'s flash?\n\n'
+      + 'This sends the vendor SAVE command (0x53). The device will likely REBOOT. '
+      + 'After it reappears, reconnect and Read back to verify the settings stuck.')) return;
+    try {
+      const st = await saveToFlash();
+      setStatus(`Saved to flash (status 0x${st.toString(16)}). Reconnect after reboot, then Read.`, 'ok');
+      toast('SAVE accepted — reconnect after reboot and verify.', 'ok');
+    } catch (err) { log('Save-to-flash error: ' + err.message, 'err'); }
   });
 
   $('global-gain').addEventListener('input', () => {

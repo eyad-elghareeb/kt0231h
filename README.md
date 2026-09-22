@@ -83,11 +83,14 @@ per-band A/B encoding:
 
 ## Remaining known gaps (honest list, post-RE)
 
-1. **Persistence requires a reflash by design.** No run-mode save command
-   exists in the vendor stack (confirmed by disassembly); the app now
-   implements the same Save-BIN + boot-reflash flow the vendor uses. The
-   boot flasher itself is **untested on hardware** — it follows the
-   community-verified upstream format (512 B blocks, no tail).
+1. **Persistence: vendor SAVE command found — reflash is now plan B.** The
+   vendor run-mode set is exactly `{0x43, 0x52, 0x53, 0x57}` (full
+   disassembly inventory); `0x53` commits DSP RAM to flash (device reboots).
+   The app exposes it as **Save to Flash** on KT0211L/KT02H20 units — Write
+   All Bands first, then save, reconnect after reboot, Read back to verify.
+   **Untested on hardware** (needs your hands + your unit). BIN patch +
+   boot-reflash remains as fallback; the boot flasher itself is likewise
+   untested (follows the community-verified upstream 512 B no-tail format).
 2. **KT0231H volume regs still unknown** (0x3A/0x3B are EQ regs there,
    0x65/0x66 read zero) — controls are best-effort on that chip only.
 3. **KT0211L/KT02H20 EQ-enable reads `3`** — bit1 meaning unknown; app
