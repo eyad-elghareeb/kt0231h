@@ -71,6 +71,32 @@ vendor binary (all `WriteFile` packet-TX call sites): commands are exactly
 KT0211L/KT02H20 (`0x0111`) in our UI; never sent to KT0231H (unverified
 there).
 
+### Memory word read — `0x08` (READ-ONLY)
+
+```
+TX: 4B [addr LE32]  08 00 00 00 00 00
+RX: word at payload[0..3] (NOT payload[6..9] like register reads)
+```
+
+From the decompiled vendor Android app (`FUN_0054d170`: loops `count`
+times, `addr += 4`; single-shot variant `FUN_0054d340`). ISP set is
+`0x33/0x32/0x08/0x21/0x88`. On JA11/KT02H20 the runtime has no `0x08` case
+so it answers zeros and `0x33` times out; KT0211L/KT0231H untested.
+Implemented in-app as `memRead32()` + Peek memory button (pure reads).
+
+### No software flash dump — definitive (community-verified)
+
+Independent RE (ParkWardRR: decompiled Android bootloader client +
+FiiO web-app JS, 2026-09) converges with ours: the CDC bootloader has 10
+tokens and **no read/dump/upload token**; `INF` (`f0 49 4e 46`) returns only
+the whole-image (size, CRC-32) fingerprint on the flag=1 path; run-mode
+`0x08` reads unmapped space, not flash. A true backup needs hardware
+(SWD/SPI). Keep the factory image before flashing — it can't be
+recovered off-device. Boot entry (for reference, NOT sent by our app):
+HID output report `0x54` + `"12345678\0"` (Ircama) / `"T12345678"`
+(ParkWardRR) → re-enumerates as `8888:cdc0` CDC serial, 9600 8N1, then
+`KTM/CHP/CFG/PWO/KSTA/0x69-blocks/STP/ZRST` (`5a 52 53 54`).
+
 ### Handshake — `0x43` ('C')
 
 ```

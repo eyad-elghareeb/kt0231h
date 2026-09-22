@@ -79,22 +79,24 @@ per-band A/B encoding:
 
 ## Remaining known gaps (honest list, post-RE)
 
-1. **Persistence: vendor SAVE command found — reflash is now plan B.** The
-   vendor run-mode set is exactly `{0x43, 0x52, 0x53, 0x57}` (full
-   disassembly inventory); `0x53` commits DSP RAM to flash (device reboots).
-   The app exposes it as **Save to Flash** on KT0211L/KT02H20 units — Write
-   All Bands first, then save, reconnect after reboot, Read back to verify.
-   **Untested on hardware** (needs your hands + your unit). BIN patch +
-   boot-reflash remains as fallback; the boot flasher itself is likewise
-   untested (follows the community-verified upstream 512 B no-tail format).
-2. **KT0231H volume regs still unknown** (0x3A/0x3B are EQ regs there,
+1. **Persistence: SOLVED via vendor SAVE (`0x53`) — user-verified on
+   KT0211L.** Write All Bands → Save to Flash → reboot → settings survive
+   replug. BIN patch + boot-reflash stays as fallback (untested here).
+2. **Firmware dump: not possible in software — definitive.** Converging
+   evidence (our disassembly + community decompiled-bootloader work):
+   no read/dump token in the CDC bootloader (`INF` = size+CRC only),
+   run-mode `0x08` reads unmapped space. The app has a read-only
+   **Peek memory** (`0x08`) button for development visibility; true backup
+   needs hardware access.
+3. **KT0231H volume regs still unknown** (0x3A/0x3B are EQ regs there,
    0x65/0x66 read zero) — controls are best-effort on that chip only.
-3. **KT0211L/KT02H20 EQ-enable reads `3`** — bit1 meaning unknown; app
+4. **KT0211L/KT02H20 EQ-enable reads `3`** — bit1 meaning unknown; app
    preserves it (writes `val|1` / `val&~1`).
-4. **Vendor `0x69` block tail** (4 bytes per 1024 B block) not fully cracked —
+5. **Vendor `0x69` block tail** (4 bytes per 1024 B block) not fully cracked —
    upstream format without tail is hardware-proven; captured tails + analysis
    in `PROTOCOL.md` §7 for future work.
-5. **The `0x43` handshake must not be sent** on KT0231H (stalls the HID pipe);
-   the app never sends it.
-6. Vendor `KT_USB_APP` device list skipped the test dongle because of its
+6. **The `0x43` handshake must not be sent** on KT0231H (stalls the HID pipe);
+   the app never sends it. Same for boot entry `0x54` — documented only,
+   never sent.
+7. Vendor `KT_USB_APP` device list skipped the test dongle because of its
    keyboard/mouse filter heuristics (disassembled) — not a protocol issue.

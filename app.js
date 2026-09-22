@@ -49,6 +49,7 @@ const RPT_ID   = 0x4B;
 const CMD_READ  = 0x52;  // 'R' — Read Register
 const CMD_WRITE = 0x57;  // 'W' — Write Register (device ACKs with 0x03)
 const CMD_SAVE  = 0x53;  // 'S' — SAVE: commit DSP RAM state to flash (vendor KT_USB_APP fn @0x546900)
+const CMD_MEMRD = 0x08;  // arbitrary word reader (Android-app decompile FUN_0054d170; JA11 answers zeros)
 const WRITE_ACK = 0x03;
 
 const REG = Object.freeze({
@@ -571,6 +572,27 @@ async function saveToFlash() {
   const st = resp.length >= 10 ? resp[6] : -1;
   if (st === 0x03 || st === 0x4F) return st;
   throw new Error(`SAVE rejected (status=${st < 0 ? 'none' : '0x' + st.toString(16)})`);
+}
+
+/* ── Memory word peek (0x08) — READ-ONLY ──
+   Same packet family as R/W/S: TX = report 0x4B + [addr LE32][0x08][0x00]
+   [00 00 00 00]. Per the decompiled Android app the word comes back at
+   payload[0..3] (resp[1..5] in report-ID-inclusive indexing) — NOT at
+   payload[6..9] like register reads. On JA11/KT02H20 the device answers
+   zeros (no flash mapping in run mode); KT0211L/KT0231H untested.
+   Pure reads: cannot alter device state. */
+async function memRead32(addr) {
+  const cmd = new Uint8Array([
+    addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF, (addr >> 24) & 0xFF,
+    CMD_MEMRD, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  logTx(cmd);
+  const resp = await hid.send(cmd, `mem-rd-0x${addr.toString(16)}`);
+  logRx(resp);
+  if (resp.length >= 10) {
+    return (resp[0] | (resp[1] << 8) | (resp[2] << 16) | (resp[3] << 24)) >>> 0;
+  }
+  throw new Error(`Memory read failed (0x${addr.toString(16)})`);
 }
 
 /* ── EQ band encode/decode ──
@@ -1540,7 +1562,7 @@ function markClean(i) { $(`band-${i}`)?.classList.remove('changed'); }
 function setControlsEnabled(on) {
   ['btn-eq-on', 'btn-eq-off', 'global-gain', 'btn-read-all', 'btn-write-all',
    'btn-reset-eq', 'btn-save-preset', 'btn-export', 'btn-import',
-   'btn-bank-dac', 'btn-bank-adc', 'btn-save-flash']
+   'btn-bank-dac', 'btn-bank-adc', 'btn-save-flash', 'btn-mempeek']
     .forEach(id => { const el = $(id); if (el) el.disabled = !on; });
   // SAVE command is verified for KT0211L/KT02H20 (pid 0x0111) only — never
   // offer it on KT0231H or unknown profiles.
@@ -1884,6 +1906,20 @@ document.addEventListener('DOMContentLoaded', () => {
       await writeRegister(enAddr, val & ~1);
       state.eqEnabled[state.bank] = false; updateEqToggleUI(); setStatus(`${state.bank} EQ OFF.`, 'ok');
     } catch (err) { log('EQ OFF error: ' + err.message, 'err'); }
+  });
+
+  $('btn-mempeek')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    const raw = prompt('Peek address (hex, reads 16 words, READ-ONLY):', '0x26');
+    if (raw === null) return;
+    const base = parseInt(raw, 16);
+    if (!Number.isFinite(base) || base < 0 || base > 0xFFFFFFFF) { toast('Bad address.', 'warn'); return; }
+    try {
+      const words = [];
+      for (let i = 0; i < 16; i++) words.push(await memRead32((base + i * 4) >>> 0));
+      log(`mem[0x${base.toString(16)}..]: ` + words.map(w => w.toString(16).padStart(8, '0')).join(' '), 'inf');
+      setStatus(`Peeked 16 words from 0x${base.toString(16)} — see log.`, 'ok');
+    } catch (err) { log('Memory peek error: ' + err.message, 'err'); }
   });
 
   $('btn-save-flash')?.addEventListener('click', async () => {
