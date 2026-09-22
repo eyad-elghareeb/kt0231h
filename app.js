@@ -1016,6 +1016,8 @@ const FwBin = {
   name: '',
   dacOff: -1,
   adcOff: -1,
+  enOff: -1,      // bank-enable byte (KT0211L-class: adcOff+0x4E; bit0=DAC, bit1=ADC)
+  hasKtVid: false, // VID 0x31B2 marker present anywhere in the image
 
   /** Encode one band into 8 image bytes ([freq][Q][gain][type], LE). */
   encodeBand8({ freq, gain, q, filterType }) {
@@ -1074,7 +1076,24 @@ const FwBin = {
         const hint = this.dacOff + 0x30;
         if (hint + 40 <= this.buf.length) this.adcOff = this.locateRun(this.buf, 5, hint);
       }
-      return { size: this.buf.length, dacOff: this.dacOff, adcOff: this.adcOff };
+      // Bank-enable byte: verified on two independent images — Tanchjim
+      // KT0211L factory BIN (adcOff 0x109A → enOff 0x10E8 = 0x03, both banks
+      // on, matching live EN regs) and the JA11 Ellyn preset (same byte
+      // 0x04→0x07). Only accept low-nibble values so a mis-located offset
+      // can never corrupt code. NOTE: KT0231H-class images use different bit
+      // positions — patching ORs bits, never clears, safe on both.
+      this.enOff = -1;
+      if (this.adcOff >= 0) {
+        const eo = this.adcOff + 0x4E;
+        if (eo < this.buf.length && (this.buf[eo] & 0xF0) === 0) this.enOff = eo;
+      }
+      this.hasKtVid = false;
+      for (let i = 0; i + 1 < this.buf.length; i++) {
+        if (this.buf[i] === 0xB2 && this.buf[i + 1] === 0x31) { this.hasKtVid = true; break; }
+      }
+      return { size: this.buf.length, dacOff: this.dacOff, adcOff: this.adcOff,
+               enOff: this.enOff, enVal: this.enOff >= 0 ? this.buf[this.enOff] : -1,
+               hasKtVid: this.hasKtVid };
     });
   },
 
@@ -1092,6 +1111,15 @@ const FwBin = {
       this.buf.set(enc, off + i * 8);
     }
     return true;
+  },
+
+  /** Ensure bank-enable bits DAC|ADC (0x03) are set at enOff. OR-only:
+      can enable banks, never disable anything. Returns [old, new] or null. */
+  patchEnable() {
+    if (this.enOff < 0 || !this.buf) return null;
+    const old = this.buf[this.enOff];
+    this.buf[this.enOff] = old | 0x03;
+    return [old, this.buf[this.enOff]];
   },
 
   /** Current image as a downloadable Blob. */
@@ -1908,10 +1936,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const info = await FwBin.load(file);
       $('fw-info').textContent = `${file.name} — ${info.size} B, ` +
         `DAC table ${info.dacOff >= 0 ? hex(info.dacOff, 4) : 'NOT FOUND'}, ` +
-        `ADC table ${info.adcOff >= 0 ? hex(info.adcOff, 4) : 'not found'}`;
+        `ADC table ${info.adcOff >= 0 ? hex(info.adcOff, 4) : 'not found'}, ` +
+        `EN byte ${info.enOff >= 0 ? hex(info.enOff, 4) + '=' + info.enVal : 'n/a'}` +
+        (info.hasKtVid ? '' : ' — NO KT VID MARKER');
       log(`Firmware BIN loaded: ${file.name} (${info.size} bytes). ` +
           `DAC EQ @ ${info.dacOff >= 0 ? hex(info.dacOff, 4) : '?'}; ` +
-          `ADC EQ @ ${info.adcOff >= 0 ? hex(info.adcOff, 4) : '?'}`, 'inf');
+          `ADC EQ @ ${info.adcOff >= 0 ? hex(info.adcOff, 4) : '?'}; ` +
+          `EN byte @ ${info.enOff >= 0 ? hex(info.enOff, 4) + '=' + info.enVal : 'n/a'}`, 'inf');
+      if (!info.hasKtVid) {
+        toast('No KTMicro VID marker in this file — verify it is a KT firmware image.', 'warn', 5000);
+        log('VID 0x31B2 marker absent — double-check this BIN before flashing.', 'warn');
+      }
       if (info.dacOff < 0) {
         toast('EQ table not located in this BIN — patching disabled.', 'warn', 5000);
         log('EQ table pattern not found — do NOT flash this image.', 'warn');
@@ -1933,8 +1968,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!FwBin.buf || FwBin.dacOff < 0) { toast('Load a firmware BIN first.', 'warn'); return; }
     FwBin.patchTable(FwBin.dacOff, state.banks.DAC);
     if (FwBin.adcOff >= 0 && state.banks.ADC) FwBin.patchTable(FwBin.adcOff, state.banks.ADC);
+    const en = FwBin.patchEnable();
     log(`Patched EQ tables in ${FwBin.name}: DAC@${hex(FwBin.dacOff, 4)}` +
-        (FwBin.adcOff >= 0 ? `, ADC@${hex(FwBin.adcOff, 4)}` : '') + '. Export the BIN now.', 'ok');
+        (FwBin.adcOff >= 0 ? `, ADC@${hex(FwBin.adcOff, 4)}` : '') +
+        (en ? `, EN byte@${hex(FwBin.enOff, 4)} ${en[0]}→${en[1]}` : '') + '. Export the BIN now.', 'ok');
     toast('Image patched — export _new.bin below.', 'ok');
   });
 

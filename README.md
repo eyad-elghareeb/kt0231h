@@ -35,8 +35,11 @@ register-identical for DAC EQ).
 - **Firmware persistence (BIN patch)** — load the unit's *own* firmware BIN,
   the app pattern-locates the EQ tables (JA11-class hint: DAC `0x106A`,
   ADC `0x109A`; entry = 8 B `[freq u16][Q u16][gain s16][type u16]`), patches
-  the current EQ in and exports `*_new.bin` for flashing. It refuses to patch
-  when the tables can't be found.
+   the current EQ in and exports `*_new.bin` for flashing. It refuses to patch
+   when the tables can't be found, sets the bank-enable byte (`0x03`) so the
+   flashed EQ is actually active, and warns when the file lacks the KTMicro
+   VID marker. Table layout double-confirmed against the Tanchjim KT0211L
+   factory image (see `PROTOCOL.md` §4).
 - **Boot-mode flasher** — implements the KTMicro bootloader protocol
   (`KTM` handshake, `VER/KEY/CHP/CFG/PWO/KSTA`, `0x69` block writes, `STP`)
   over WebHID feature reports against `31B2:0101`. Double-gated (type-FLASH +

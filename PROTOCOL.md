@@ -238,6 +238,15 @@ from `Log/23-10-11 18-05-56log.txt` and is reproducible with
   `[freq_Hz u16][Q×1000 u16][gain×10 s16][type u16]`
 - JA11-class image: DAC EQ table @ **0x106A**, ADC EQ table @ **0x109A**
   (5 bands each).
+- Second source: Tanchjim `KT0211L_TANCHJIM-DSP_20240815_1.0.2.bin`
+  (42 272 B, sha256 `A8DC36CC…EB57094`) confirms the same offsets and entry
+  layout with factory 1000/2000/5000/8000/10000 Hz, Q 0.707, 0 dB, Peak.
+  Bank-enable byte @ **0x10E8** (= adcOff+0x4E) reads **0x03** (bit0=DAC,
+  bit1=ADC — matches live KT0211L EN regs; the JA11 Ellyn preset moves this
+  same byte 0x04→0x07). USB device descriptor @ ~**0xA0F8** (VID `0x31B2`,
+  PID `0x0111`), product ASCII @ **0x1120**, flash tag
+  `KT_lnv1b_flash_10211LC02…`, build stamp `Aug 15 2024`. No UTF-16 strings
+  in the image (USB strings are built at runtime from ASCII).
 - The extracted vendor image stores section markers such as `REG:` (factory
   register defaults block) inside the app body; tables are best **located by
   pattern**, not hardcoded offsets — that is what the app's BIN patcher does
