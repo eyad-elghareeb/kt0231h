@@ -350,6 +350,22 @@ VOLUME page `groupBox_PGA` (`comboBox_A_DAC/A_ADC`) + `groupBox_Digital`
 filters by usage/keyboard/mouse heuristics (`HIDClass/Mouse/Keyboard`,
 `&mi_`, skip-list above) — our WebHID access to the same device works fine.
 
+**`kt_usb_cmd_tool.exe` v1.3.16** (carved from `TANCHJIM_DSPS_BOOT_TOOL_1.0.03.exe`
+offset 21872, 5.86 MB MinGW static-Qt CLI; runs standalone, `-h` verified):
+`arg1 -m(KT020X) -s(KT021X KT02H2X KT02F2X)` — HID vs serial transport;
+`arg2 -b(boot) -pb(boot by path) -v(ver) -pl(path list) -t(cdc) -bv(boot ver)`
+(plus hidden `-fb`/`-nb`); `arg3/4 vid pid`, `arg5 xxx.bin`. Examples use
+`0x31b2 0x0020` (KT020X boot PID) and HID path `vid_352f&pid_0100&mi_03`
+(boot-mode PID on that family). Opens HID via raw `\\?\hid#…` CreateFile
+(imports are system-only; `HidD_*` resolved at runtime). Log format
+`/Log/log.txt`, `STEP_ShakeHand`, `turn to cdc`, default boot image
+`KT0206_boot_v1.05_20210608.bin`, flash tag `KT_msv2b_flash`.
+**There is deliberately no dump/read flag** — `-v` prints the app soft
+version, `-t` only reboots into CDC boot mode. `-m -pl 0x31b2` (pure
+SetupAPI enumeration, no device I/O) lists the test dongle as
+`vid_31b2&pid_0111&mi_03`. Combined with the decompiled-bootloader verdict
+(§7.7), the vendor toolset has no firmware-read primitive at all.
+
 ---
 
 ## 7. Open questions
@@ -369,3 +385,12 @@ filters by usage/keyboard/mouse heuristics (`HIDClass/Mouse/Keyboard`,
 5. **`0x43` handshake** — sent by the vendor app, stalls KT0231H; omitted.
 6. **Boot PID** — upstream uses 0x0101; vendor descriptor templates also
    contain 0x0001/0x0002. The app's boot panel tries all three.
+7. **Firmware dump (CLOSED — proven absent, not merely uncaptured).**
+   Three independent lines of evidence: (a) `kt_usb_cmd_tool` v1.3.16's full
+   CLI has burn/verify-query/list/cdc/boot-ver and no dump op; (b) the
+   decompiled CDC bootloader exposes 10 tokens with no flash read
+   (ParkWardRR/ja11-config-toolkit, 2026-09-05: INF returns size+CRC32 only);
+   (c) every captured vendor log is write-direction. Run-mode `0x08` reads
+   unmapped space. Software backup of this family is impossible — true
+   backup needs hardware (SWD/SPI clip). Do not ship a dump button on the
+   vendor protocol; the honest UI is the 0x08 memory peeker + register dump.
