@@ -1,9 +1,14 @@
 /**
- * KT0231H DAC Control — Offline App  |  app.js  v5
+ * KTLAB — KTMicro DSP Console  |  app.js  v11
  * ─────────────────────────────────────────────────────────
  * KTMicro register-level DSP control (WebHID)
- *  - KT0231H  (0x31B2:0x1132): 6-band DAC PEQ @ 0x35-0x40 (primary target)
- *  - KT02H20  (0x31B2:0x0111): 5-band DAC PEQ @ 0x26-0x2F (legacy compat)
+ *  - KT0231H   (0x31B2:0x1132): 6-band DAC PEQ @ 0x35-0x40 (primary target)
+ *  - KT0211L   (0x31B2:0x0111): 5-band DAC PEQ @ 0x26-0x2F (Tanchjim DSP S,
+ *               Tangzu Wan'er 2 DSP — owner-reported)
+ *  - KT02H20   (0x31B2:0x0111): 5-band DAC PEQ @ 0x26-0x2F (legacy compat)
+ *  - KT0210    (0x31B2:0x1112): 5-band DAC PEQ @ 0x26-0x2F (Bunny DSP)
+ *  - KT02F20/F21/F22, KT02H22, KT0210S: Helios-class name-matched profiles
+ *    (same register map; see PROFILES §3 comments + CHIPS.md)
  * Protocol: 0x4B HID report, 0x52 read / 0x57 write registers
  *
  * v5:  KT0231H support (6 bands, per-profile register maps, VID:PID match,
@@ -21,6 +26,35 @@
  *      - Boot-mode panel: KTM handshake + full flash sequence (connect,
  *        VER/KEY/CHP/CFG/PWO/KSTA, 512B block writes, STP) over WebHID
  *        feature reports; bootloader = 0x31B2:0x0101.
+ * v8:  KT0210 "TANCHJIM BUNNY DSP" profile added (0x31B2:0x1112) — map from
+ *        vzpyr/bunnyeq REGISTER-MAP.md (hardware probing fw v1.01 + Tanchjim
+ *        APK decompilation) + onbot7/BunnyDSPLinux. Same 0x4B/0x52/0x57/0x53
+ *        run-mode protocol as the rest of the family; 5-band DAC EQ @
+ *        0x26-0x2F, EN @ 0x24 (0x03 = custom EQ active, 0x02 = bypass),
+ *        mic gain @ 0x65, DAC volume @ 0x66, SAVE-to-flash 0x53 CONFIRMED
+ *        working (triggers USB re-enumeration). Chip ID via feature report
+ *        0x54 = 'TURN2CDC'. Profile flag `supportsSave` replaces the old
+ *        pid-0x0111 hardcoded save gate.
+ * v9:  - Full UI redesign (instrument-console theme); Firmware BIN patcher
+ *        + boot-mode flasher panels restored in the HTML (logic existed since
+ *        v7, DOM had been dropped in the v8 markup rewrite).
+ *      - KT0211L profile additionally matches TANGZU / WAN'ER / WANER product
+ *        strings — Tangzu Wan'er 2 DSP is owner-reported as KT0211L.
+ *      - Gain tint palette follows the v9 theme (mint boost / rose cut).
+ * v10: - Chip support expansion: KT02F20/F21/F22, KT02H22, KT0210S profiles
+ *        added (Helios register map, name-matched; F20 map image-confirmed
+ *        via two vendor SDK builds). MSV2B (KT020x) + KT0712 deliberately
+ *        NOT profiled — different architectures, no run-mode map known.
+ *      - New ARCHITECTURE.md (Andes NDS32 core, image header format,
+ *        SWD/UART port map) + scripts/kt_img_header.py; PROTOCOL.md §9.
+ * v11: - Full-control suite (§12): device-ID chip prober + profile
+ *        override, USB identity editor (strings + VID/PID), DRC noise-gate
+ *        & limiter panel (0x71-0x73/0x78-0x79), Helios ADC (mic) EQ bank
+ *        (0x18/0x1A-0x23), register explorer (0x00-0xFF dump + JSON/CSV),
+ *        0x08 extended-space dumper (.bin export), AutoEQ JSON import.
+ *      - KT_BOOT_TOOL flash_read_all/./test.bin/KTSPI finding documented
+ *        (PROTOCOL.md §10.1, VENDOR-TOOLS.md §2b) + HARDWARE-DUMP.md +
+ *        scripts/kt_boot_tokens.py.
  * v4:  register-protocol rewrite (legacy AA/BB command protocol removed)
  *      debug logging, report-ID probe, single-frame send/recv
  *
@@ -201,11 +235,14 @@ const PROFILES = {
     versionAddr: REG.VERSION, versionCount: 2,
     reg: {
       EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
       EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
       PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
       DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
     },
     filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: true, // vendor 0x53 verified on this profile
   },
   // Listed AFTER KT02H20 on purpose: both share PID 0x0111, so a nameless
   // 0x0111 device must fall through to KT02H20 by default. Name matches
@@ -216,8 +253,11 @@ const PROFILES = {
     // live hidapi dump 2026-09-21: identical KT02H20 layout. NOTE: EQ enable
     // regs read 3, not 1 — bit1 meaning unknown, the app preserves it
     // (writes val|1 / val&~1, never a bare 0/1).
+    // Tangzu Wan'er 2 DSP is owner-reported to be a KT0211L device (no app,
+    // no published firmware — same OEM channel as Tanchjim), so TANGZU /
+    // WAN'ER / WANER product strings route here too.
     name: 'KT0211L', vid: 0x31B2, pid: 0x0111,
-    matchKeys: ['KT0211', '0211L', 'CDS'],
+    matchKeys: ['KT0211', '0211L', 'CDS', "WAN'ER", 'WANER', 'TANGZU'],
     reportId: RPT_ID, probeReportIds: false,
     writeAck: WRITE_ACK, // 0x03 confirmed live (write ACKed, readback matched)
     gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
@@ -227,11 +267,162 @@ const PROFILES = {
     versionAddr: REG.VERSION, versionCount: 2,
     reg: {
       EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
       EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
       PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
       DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
     },
     filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: true, // vendor 0x53 verified on this profile
+  },
+  // KT0210 — Tanchjim Bunny DSP. Distinct PID 0x1112, so no name ambiguity.
+  // Sources: vzpyr/bunnyeq REGISTER-MAP.md (fw v1.01 hardware probe + Tanchjim
+  // APK decompile), onbot7/BunnyDSPLinux (8-band reports on newer fw — layout
+  // below is the 5-band v1.01 map; extra bands unknown). Product string
+  // 'TANCHJIM BUNNY DSP'; chip ID 'TURN2CDC' via feature report 0x54.
+  'KT0210': {
+    name: 'KT0210 (Bunny DSP)', vid: 0x31B2, pid: 0x1112,
+    matchKeys: ['BUNNY', 'TANCHJIM'],
+    reportId: RPT_ID, probeReportIds: false,
+    writeAck: WRITE_ACK, // bunnyeq: writes are fire-and-forget; 0x03 ACK class
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000], // bunnyeq dump defaults
+    defaultQ: 0.707,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: true, // bunnyeq: 0x53 persists to flash + USB re-enum
+  },
+
+  /* ── v10 Helios-class expansion ──────────────────────────────────────
+     All profiles below reuse the Helios register map (REG.EQ_DAC 0x26–0x2F,
+     EN 0x24) — justified per chip:
+     · KT02F20: image-confirmed identical layout. Two vendor SDK builds in
+       firmware/ carry tag `KT_Helios_v1b___KT02F20B` with the same REG:
+       block @0x1000, EQ tables @0x106A/0x109A, bank-enable @0x10E8, ENTY
+       0x83000 — byte-layout identical to 02H20 (kt_img_header.py output).
+       SDK images embed USB PID 0x0111, so VID:PID fallback also lands here.
+     · KT02F21/KT02F22/KT02H22/KT0210S: named in the KT_BOOT_TOOL 1.0.58
+       chip roster (VENDOR-TOOLS.md §2.1) as siblings of confirmed Helios
+       parts; no run-mode dump exists yet, so profiles are name-matched only
+       (vid/pid null) and will never hijack the VID:PID fallback. */
+  'KT02F20': {
+    name: 'KT02F20', vid: 0x31B2, pid: 0x0111,
+    matchKeys: ['KT02F20', '02F20'],
+    reportId: RPT_ID, probeReportIds: false,
+    writeAck: WRITE_ACK, // assumed 0x03 class; unverified on hardware
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000],
+    defaultQ: 0.707,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: false, // expected (same family) — not yet verified live
+  },
+  'KT02F21': {
+    name: 'KT02F21', vid: null, pid: null,
+    matchKeys: ['KT02F21', '02F21'],
+    reportId: RPT_ID, probeReportIds: true,
+    writeAck: WRITE_ACK,
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000],
+    defaultQ: 0.707,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: false,
+  },
+  'KT02F22': {
+    name: 'KT02F22', vid: null, pid: null,
+    matchKeys: ['KT02F22', '02F22'],
+    reportId: RPT_ID, probeReportIds: true,
+    writeAck: WRITE_ACK,
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000],
+    defaultQ: 0.707,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: false,
+  },
+  'KT02H22': {
+    // KT02H22: roster entry + warmseaic blog compared it against ALC4080.
+    // Expected Helios map; nothing hardware-verified yet.
+    name: 'KT02H22', vid: null, pid: null,
+    matchKeys: ['KT02H22', '02H22'],
+    reportId: RPT_ID, probeReportIds: true,
+    writeAck: WRITE_ACK,
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000],
+    defaultQ: 0.707,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: false,
+  },
+  'KT0210S': {
+    // KT0210S: roster entry between KT0211L and KT0231H. Expected Helios
+    // map; NOT the Bunny (KT0210) — distinct roster slot, no chip ID string.
+    name: 'KT0210S', vid: null, pid: null,
+    matchKeys: ['KT0210S', '0210S'],
+    reportId: RPT_ID, probeReportIds: true,
+    writeAck: WRITE_ACK,
+    gainRange: { min: -12, max: 12 }, qRange: { min: 0.1, max: 16 },
+    defaultBandCount: REG.EQ_BANDS,
+    defaultFreqs: [1000, 2000, 5000, 8000, 10000],
+    defaultQ: 0.707,
+    versionAddr: REG.VERSION, versionCount: 2,
+    reg: {
+      EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+      EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (mic EQ)
+      EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
+      PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
+      DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
+    },
+    filterTypes: FILTER_TYPES_5,
+    supportsAdcBank: true, // ADC-side (mic) EQ bank — Helios: EN 0x18, bands 0x1A-0x23 (upstream-verified on KT02H20)
+    supportsSave: false,
   },
 };
 
@@ -246,11 +437,13 @@ const DEFAULT_PROFILE = {
   versionAddr: REG.VERSION, versionCount: 2,
   reg: {
     EQ_DAC: REG.EQ_DAC, EQ_DAC_EN: REG.EQ_DAC_EN,
+    EQ_ADC: 0x1A, EQ_ADC_EN: 0x18, // Helios ADC-side bank (best-effort on unknown chips)
     EQ_STRIDE: REG.EQ_STRIDE, EQ_BANDS: REG.EQ_BANDS,
     PGA_ADC: REG.PGA_ADC, PGA_DAC: REG.PGA_DAC,
     DIG_ADC: REG.DIG_ADC, DIG_DAC: REG.DIG_DAC,
   },
   filterTypes: FILTER_TYPES_5,
+  supportsAdcBank: true, // ADC-side (mic) EQ bank — same Helios map (best-effort on unknown chips)
 };
 
 function resolveProfile(productName = '', vendorId = null, productId = null) {
@@ -286,6 +479,7 @@ class HIDController {
 
   get connected()   { return this.#dev?.opened ?? false; }
   get profile()     { return this.#profile; }
+  set profile(p)    { this.#profile = p ?? DEFAULT_PROFILE; } // v11: manual override (chip prober)
   get productName() { return this.#dev?.productName ?? ''; }
 
   /** Active register value: profile override wins, else global REG default. */
@@ -1463,8 +1657,9 @@ let disconnectHandled = false;
 const hid = new HIDController();
 
 function gainToColor(gain, alpha = 0.18) {
-  if (gain > 0.2) return `rgba(232,66,58,${Math.min(gain / 12, 1) * alpha})`;
-  if (gain < -0.2) return `rgba(61,220,132,${Math.min(-gain / 12, 1) * alpha})`;
+  // v9 palette: mint boost / rose cut (matches the console theme)
+  if (gain > 0.2) return `rgba(69,227,198,${Math.min(gain / 12, 1) * alpha})`;
+  if (gain < -0.2) return `rgba(255,122,147,${Math.min(-gain / 12, 1) * alpha})`;
   return 'transparent';
 }
 
@@ -1562,12 +1757,15 @@ function markClean(i) { $(`band-${i}`)?.classList.remove('changed'); }
 function setControlsEnabled(on) {
   ['btn-eq-on', 'btn-eq-off', 'global-gain', 'btn-read-all', 'btn-write-all',
    'btn-reset-eq', 'btn-save-preset', 'btn-export', 'btn-import',
-   'btn-bank-dac', 'btn-bank-adc', 'btn-save-flash', 'btn-mempeek']
+   'btn-bank-dac', 'btn-bank-adc', 'btn-save-flash', 'btn-mempeek',
+   'btn-id-read', 'btn-id-refresh', 'btn-id-write-str', 'btn-id-write-vpid',
+   'btn-ng-apply', 'btn-lim-apply', 'btn-reg-dump', 'btn-ext-dump',
+   'btn-apply-profile']
     .forEach(id => { const el = $(id); if (el) el.disabled = !on; });
-  // SAVE command is verified for KT0211L/KT02H20 (pid 0x0111) only — never
-  // offer it on KT0231H or unknown profiles.
+  // SAVE command is verified for KT0211L/KT02H20 (pid 0x0111) and KT0210
+  // Bunny (pid 0x1112) — never offer it on KT0231H or unknown profiles.
   const sf = $('btn-save-flash');
-  if (sf) sf.style.display = (on && hid.profile && hid.profile.pid === 0x0111) ? '' : 'none';
+  if (sf) sf.style.display = (on && hid.profile && hid.profile.supportsSave) ? '' : 'none';
   document.querySelectorAll('.band-send-btn, .vslider, .band-controls input, .band-controls select,'
     + ' .volume-select, #dig-adc')
     .forEach(el => { el.disabled = !on; });
@@ -1704,6 +1902,11 @@ async function onConnect() {
     $('global-gain-val').textContent = state.globalGain.toFixed(1) + ' dB';
 
     refreshVolumeUI();
+
+    if (typeof postConnectExtras === 'function') {
+      try { await postConnectExtras(); }
+      catch (err) { dbg(`postConnectExtras failed: ${err.message}`); }
+    }
 
     updateEqToggleUI();
     visualizer?.draw(state.bands);
@@ -2131,6 +2334,16 @@ document.addEventListener('DOMContentLoaded', () => {
   $('file-import').addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
     try {
+      // v11: AutoEQ parametric JSON passthrough ({filters:[{type,frequency,gain,q}]})
+      let obj = null;
+      try { obj = JSON.parse(await file.text()); } catch { obj = null; }
+      if (obj && Array.isArray(obj.filters) && obj.filters.length &&
+          typeof obj.filters[0].frequency === 'number') {
+        applyAutoEQ(obj.filters, file.name);
+        setStatus(`AutoEQ "${file.name}" loaded into DAC bank.`, 'ok');
+        e.target.value = '';
+        return;
+      }
       const n = await Presets.importJSON(file);
       renderLocalPresets();
       log(`Imported ${n} preset(s) from ${file.name}.`);
@@ -2187,3 +2400,453 @@ document.addEventListener('DOMContentLoaded', () => {
     }).catch(err => dbg(`getDevices() threw ${err.name}: ${err.message}`));
   }
 });
+
+/* ════════════════════════════════════════════════════════════
+   § 12  FULL CONTROL SUITE (v11)
+   12.1 Identity read + chip prober + profile override
+   12.2 USB identity editor (rename device, VID/PID)
+   12.3 DRC — noise gate + limiter (0x71-0x73 / 0x78-0x79)
+   12.4 Register-space explorer (0x00-0xFF dump + export)
+   12.5 Extended-space (0x08) dump + export
+   12.6 AutoEQ parametric-JSON import
+   Register semantics per PROTOCOL.md §2/§9 + upstream ktmicro-tools.
+════════════════════════════════════════════════════════════ */
+
+/* ── 12.1 identity ── */
+
+const KNOWN_REG_LABELS = {
+  0x00: 'version[0]', 0x01: 'flags (bit9=single-DAC)', 0x04: 'version[1]',
+  0x06: 'version (0231H layout)', 0x08: 'build date[0]', 0x0A: 'build date[1]',
+  0x18: 'ADC EQ EN (Helios)', 0x1A: 'ADC band0 A (Helios)',
+  0x24: 'DAC EQ EN (Helios)', 0x26: 'DAC band0 A (Helios)',
+  0x34: 'DAC EQ EN (0231H)', 0x35: 'DAC band0 A (0231H)',
+  0x3A: 'A_ADC PGA / EQ (0231H)', 0x3B: 'A_DAC PGA / EQ (0231H)',
+  0x40: 'USB mfr[0]', 0x44: 'USB mfr[1]', 0x48: 'USB product[0]',
+  0x4C: 'USB product[1]', 0x50: 'USB serial[0]', 0x54: 'USB serial[1]',
+  0x5B: 'VID:PID packed', 0x65: 'DIG_ADC', 0x66: 'DIG_DAC',
+  0x71: 'NoiseGate cfg', 0x72: 'NG AT/RT', 0x73: 'NG hold/noiseT',
+  0x78: 'Limiter cfg', 0x79: 'LIM AT/RT', 0xE1: 'magic',
+};
+
+async function readIdentity() {
+  return {
+    version:      await readString(0x00, 2),
+    flags:        await readRegister(0x01),
+    buildDate:    await readString(0x08, 2),
+    manufacturer: await readString(0x40, 2),
+    product:      await readString(0x48, 2),
+    serial:       await readString(0x50, 2),
+    vpid:         await readRegister(0x5B),
+    magic:        (await readRegister(0xE1)) >>> 0,
+  };
+}
+
+function isFreqLikeAReg(v) {
+  // A-reg = [freq_Hz:16][gain×10:16 signed] — sanity-window the halves
+  const f = (v >>> 16) & 0xFFFF;
+  let g = v & 0xFFFF;
+  if (g >= 0x8000) g -= 0x10000;
+  return f >= 20 && f <= 20000 && Math.abs(g) <= 120;
+}
+
+async function probeChip() {
+  const id  = await readIdentity();
+  const why = [];
+  let guess = null;
+
+  // Band-register discriminator: on Helios 0x26 is DAC band0's A-reg, on
+  // KT0231H 0x35 is. Whichever address decodes as a sane A-reg names the
+  // layout (works even after the factory EQ was re-tuned).
+  const v26 = await readRegister(0x26);
+  const v35 = await readRegister(0x35);
+  const h26 = isFreqLikeAReg(v26), h35 = isFreqLikeAReg(v35);
+  if (h26 && !h35)      { guess = 'KT02H20';  why.push(`0x26 = A-reg 0x${v26.toString(16)} (freq ${(v26 >>> 16)}) while 0x35 isn't → Helios layout`); }
+  else if (h35 && !h26) { guess = 'KT0231H';  why.push(`0x35 = A-reg 0x${v35.toString(16)} (freq ${(v35 >>> 16)}) while 0x26 isn't → KT0231H layout`); }
+  else if (h26 && h35)  why.push('both 0x26/0x35 decode as A-regs — inconclusive');
+  else                  why.push('neither 0x26 nor 0x35 holds a band A-reg — inconclusive');
+
+  const u = (id.version || '').toUpperCase();
+  if (u.includes('CDS')) { guess = 'KT0211L'; why.push('version string contains "CDS" → KT0211L (CDS.KT USB Audio firmware family)'); }
+  if (id.flags & 0x0200)  why.push('flags 0x01 bit9 set → single-DAC model (mic-only dongle class)');
+  if (id.magic === 0x12345678) why.push('magic 0xE1 = 0x12345678 OK');
+  else why.push(`magic 0xE1 = 0x${id.magic.toString(16)} (unexpected — verify this is a KT device)`);
+  return { guess, why, id };
+}
+
+function renderIdentity() {
+  const box = $('dev-id');
+  if (!box || !probeChip.last) return;
+  const { guess, why, id } = probeChip.last;
+  const vp = `VID ${hex(id.vpid & 0xFFFF)} : PID ${hex((id.vpid >>> 16) & 0xFFFF)}`;
+  const lines = [
+    `version  : ${id.version || '(empty)'}`,
+    `build    : ${id.buildDate || '(empty)'}`,
+    `mfr      : ${id.manufacturer || '(empty)'}`,
+    `product  : ${id.product || '(empty)'}`,
+    `serial   : ${id.serial || '(empty)'}`,
+    `usb id   : ${vp}   flags 0x${(id.flags >>> 0).toString(16)}`,
+    `profile  : ${hid.profile?.name ?? '?'}   bands ${hid.profile?.defaultBandCount ?? '?'}`,
+    '',
+    `CHIP GUESS: ${guess ?? 'unresolved'} (active profile: ${hid.profile?.name})`,
+    ...why.map(w => `  · ${w}`),
+  ];
+  box.textContent = lines.join('\n');
+}
+
+async function refreshIdentity() {
+  probeChip.last = await probeChip();
+  renderIdentity();
+  const { id } = probeChip.last;
+  if ($('usb-mfr'))    $('usb-mfr').value    = id.manufacturer || '';
+  if ($('usb-prod'))   $('usb-prod').value   = id.product || '';
+  if ($('usb-serial')) $('usb-serial').value = id.serial || '';
+  if ($('usb-vid'))    $('usb-vid').value    = hex(id.vpid & 0xFFFF).replace('0x', '').toUpperCase();
+  if ($('usb-pid'))    $('usb-pid').value    = hex((id.vpid >>> 16) & 0xFFFF).replace('0x', '').toUpperCase();
+  log(`Identity read: "${id.product || '?'}" v"${id.version}" ${id.buildDate} — guess: ${probeChip.last.guess ?? '?'}`, 'inf');
+  if (probeChip.last.guess && PROFILES[probeChip.last.guess] &&
+      probeChip.last.guess !== hid.profile?.name) {
+    toast(`Probe suggests ${probeChip.last.guess} — pick it in the profile select and Apply.`, 'info', 6000);
+  }
+}
+probeChip.last = null;
+
+function applyProfileName(name) {
+  const p = PROFILES[name];
+  if (!p) { toast('Unknown profile.', 'warn'); return; }
+  hid.profile = p;
+  state.bankCount = p.defaultBandCount ?? p.reg?.EQ_BANDS ?? 5;
+  state.bank = 'DAC';
+  state.banks = makeBanks();
+  buildBandUI();
+  state.bands.forEach((_, i) => refreshBandUI(i));
+  visualizer.bands = state.bands;
+  visualizer?.draw(state.bands);
+  updateBankUI();
+  updateEqToggleUI();
+  const sf = $('btn-save-flash');
+  if (sf) sf.style.display = (hid.connected && p.supportsSave) ? '' : 'none';
+  $('device-name').textContent = `${p.name} — ${hid.productName || 'override'}`;
+  log(`Profile override → ${p.name} (EQ_DAC 0x${p.reg.EQ_DAC.toString(16)}, ${p.defaultBandCount} bands, save=${!!p.supportsSave})`, 'warn');
+  toast(`Profile set to ${p.name} — Read from Device to load its state.`, 'ok');
+}
+
+/* ── 12.2 USB identity editor ── */
+
+function packAsciiRegs(s, nBytes) {
+  // string → LE32 ASCII chunks (vendor string-block encoding)
+  const out = [];
+  for (let i = 0; i < nBytes; i += 4) {
+    let v = 0;
+    for (let j = 0; j < 4; j++) {
+      const ch = i + j < s.length ? (s.charCodeAt(i + j) & 0xFF) : 0;
+      v |= ch << (8 * j);
+    }
+    out.push(v >>> 0);
+  }
+  return out;
+}
+
+async function writeUsbStrings() {
+  const mfr  = $('usb-mfr').value.trim();
+  const prod = $('usb-prod').value.trim();
+  const ser  = $('usb-serial').value.trim();
+  // blocks per PROTOCOL.md §2: mfr 0x40-0x47 (8 B), product 0x48-0x4F (8 B),
+  // serial 0x50-0x56 (7 B — do NOT spill into 0x57)
+  const plan = [
+    [0x40, packAsciiRegs(mfr, 8)],
+    [0x48, packAsciiRegs(prod, 8)],
+    [0x50, packAsciiRegs(ser, 7)],
+  ];
+  for (const [addr, regs] of plan) {
+    for (let i = 0; i < regs.length; i++) await writeRegister(addr + i, regs[i]);
+  }
+  log(`USB strings written: mfr="${mfr}" product="${prod}" serial="${ser}" ` +
+      `(run-mode RAM — replug to see; persist via Save to Flash where supported)`, 'ok');
+  toast('USB strings written — replug to see them on the host.', 'ok', 5000);
+}
+
+async function writeVidPid() {
+  const vidS = $('usb-vid').value.trim(), pidS = $('usb-pid').value.trim();
+  if (!/^[0-9a-fA-F]{1,4}$/.test(vidS) || !/^[0-9a-fA-F]{1,4}$/.test(pidS)) {
+    toast('VID/PID must be 1-4 hex digits.', 'warn'); return;
+  }
+  const vid = parseInt(vidS, 16), pid = parseInt(pidS, 16);
+  if (!confirm(`Write USB VID:PID = ${hex(vid)}:${hex(pid)}?\n\n` +
+               'The device will present this identity on the next re-plug. ' +
+               'Wrong values can confuse host drivers — note the current one first:\n' +
+               $('dev-id').textContent.split('\n').find(l => l.includes('usb id')) || '(read identity first)')) return;
+  // 0x5B = [PID:16][VID:16] packed
+  await writeRegister(0x5B, ((pid << 16) | vid) >>> 0);
+  log(`USB VID:PID register 0x5B → ${hex(vid)}:${hex(pid)} (takes effect after replug/Save)`, 'ok');
+  toast('VID/PID written — replug to apply.', 'warn', 6000);
+}
+
+/* ── 12.3 DRC — noise gate (0x71-0x73) + limiter (0x78-0x79) ── */
+
+const NG_FLAGS = 0x3C, NG_HOLD = 0x000A;
+const thrByte = db => clamp(Math.round(256 + db), 0, 255); // dB ≤ 0 → byte 0..255
+
+async function writeNoiseGate() {
+  const en = $('ng-en').classList.contains('active');
+  const th = thrByte(parseFloat($('ng-th').value));
+  const gv = thrByte(parseFloat($('ng-gv').value));
+  const at = clamp(parseInt($('ng-at').value, 10) || 0, 0, 65535);
+  const rt = clamp(parseInt($('ng-rt').value, 10) || 0, 0, 65535);
+  // 0x71 [EN(bit7)|flags 0x3C][THhigh][THlow][GateVol]  · 0x72 [AT][RT] · 0x73 [hold][noiseT]
+  await writeRegister(0x71, ((en ? 0x80 : 0) | NG_FLAGS | (th << 8) | (th << 16) | (gv << 24)) >>> 0);
+  await writeRegister(0x72, ((at & 0xFFFF) | (rt << 16)) >>> 0);
+  await writeRegister(0x73, (NG_HOLD | (0 << 16)) >>> 0);
+  log(`NoiseGate → EN=${en} TH=${$('ng-th').value}dB GV=${$('ng-gv').value}dB AT=${at}ms RT=${rt}ms`, 'ok');
+  toast('Noise gate written.', 'ok');
+}
+
+async function writeLimiter() {
+  const en   = $('lim-en').classList.contains('active');
+  const soft = $('lim-soft').classList.contains('active');
+  const th   = thrByte(parseFloat($('lim-th').value));
+  const at   = clamp(parseInt($('lim-at').value, 10) || 0, 0, 65535);
+  const rt   = clamp(parseInt($('lim-rt').value, 10) || 0, 0, 65535);
+  // 0x78 [EN(bit7)+SOFT(bit6)][rsv][threshold=256+dB]  · 0x79 [AT][RT]
+  await writeRegister(0x78, ((en ? 0x80 : 0) | (soft ? 0x40 : 0) | (th << 16)) >>> 0);
+  await writeRegister(0x79, ((at & 0xFFFF) | (rt << 16)) >>> 0);
+  log(`Limiter → EN=${en} SOFT=${soft} TH=${$('lim-th').value}dB AT=${at}ms RT=${rt}ms`, 'ok');
+  toast('Limiter written.', 'ok');
+}
+
+async function fetchDRC() {
+  // best-effort readback into the UI
+  try {
+    const v71 = await readRegister(0x71);
+    $('ng-en').classList.toggle('active', !!(v71 & 0x80));
+    const thDb = (v71 >>> 8) & 0xFF;
+    $('ng-th').value = Math.max(-96, thDb - 256);
+    $('ng-th-val').textContent = `${$('ng-th').value} dB`;
+    const gvDb = (v71 >>> 24) & 0xFF;
+    $('ng-gv').value = Math.max(-96, gvDb - 256);
+    $('ng-gv-val').textContent = `${$('ng-gv').value} dB`;
+    const v72 = await readRegister(0x72);
+    $('ng-at').value = v72 & 0xFFFF; $('ng-rt').value = (v72 >>> 16) & 0xFFFF;
+  } catch (err) { dbg(`NG readback: ${err.message}`); }
+  try {
+    const v78 = await readRegister(0x78);
+    $('lim-en').classList.toggle('active', !!(v78 & 0x80));
+    $('lim-soft').classList.toggle('active', !!(v78 & 0x40));
+    const thDb = (v78 >>> 16) & 0xFF;
+    $('lim-th').value = Math.max(-96, thDb - 256);
+    $('lim-th-val').textContent = `${$('lim-th').value} dB`;
+    const v79 = await readRegister(0x79);
+    $('lim-at').value = v79 & 0xFFFF; $('lim-rt').value = (v79 >>> 16) & 0xFFFF;
+  } catch (err) { dbg(`LIM readback: ${err.message}`); }
+}
+
+/* ── 12.4 register-space explorer ── */
+
+let regDumpRows = null;
+
+async function dumpRegisters() {
+  const box = $('reg-dump');
+  regDumpRows = [];
+  for (let a = 0x00; a <= 0xFF; a++) {
+    let v = null;
+    try { v = await readRegister(a); } catch { v = null; }
+    regDumpRows.push([a, v]);
+    if ((a & 0x1F) === 0x1F) setStatus(`Register dump ${(a + 1)}/256…`, 'working');
+  }
+  renderRegDump();
+  setStatus('Register dump complete (0x00-0xFF).', 'ok');
+  log(`Register dump: ${regDumpRows.filter(r => r[1] !== null).length}/256 readable.`, 'inf');
+}
+
+function renderRegDump() {
+  const box = $('reg-dump');
+  if (!box || !regDumpRows) return;
+  const lines = [];
+  for (let i = 0; i < regDumpRows.length; i += 4) {
+    lines.push(regDumpRows.slice(i, i + 4).map(([a, v]) => {
+      const hexv = v === null ? '    ERR' : (v >>> 0).toString(16).padStart(8, '0');
+      return `${a.toString(16).padStart(2, '0')} ${hexv}${KNOWN_REG_LABELS[a] ? '  ' + KNOWN_REG_LABELS[a] : ''}`;
+    }).join('\n'));
+  }
+  box.textContent = lines.join('\n');
+  box.scrollTop = 0;
+}
+
+function downloadBlob(name, blob) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportRegDump(kind) {
+  if (!regDumpRows) { toast('Run a register dump first.', 'warn'); return; }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  if (kind === 'csv') {
+    const csv = 'addr_hex,addr_dec,value_hex,value_dec,label\n' + regDumpRows.map(([a, v]) =>
+      `0x${a.toString(16).padStart(2, '0')},${a},${v === null ? '' : '0x' + (v >>> 0).toString(16)},${v ?? ''},"${KNOWN_REG_LABELS[a] || ''}"`).join('\n');
+    downloadBlob(`kt-regs-${stamp}.csv`, new Blob([csv], { type: 'text/csv' }));
+  } else {
+    const json = JSON.stringify({ kind: 'ktlab-register-dump', capturedAt: new Date().toISOString(),
+      profile: hid.profile?.name, rows: regDumpRows.map(([a, v]) => ({ addr: `0x${a.toString(16).padStart(2, '0')}`,
+        value: v === null ? null : (v >>> 0).toString(16), label: KNOWN_REG_LABELS[a] || null })) }, null, 2);
+    downloadBlob(`kt-regs-${stamp}.json`, new Blob([json], { type: 'application/json' }));
+  }
+  log(`Register dump exported as ${kind.toUpperCase()}.`, 'inf');
+}
+
+/* ── 12.5 extended-space (0x08) dump ── */
+
+let extDump = null; // { start, words: [] }
+
+async function dumpExtended() {
+  const startS = ($('ext-addr').value || '').trim();
+  const count  = parseInt($('ext-count').value, 10);
+  const start  = parseInt(startS.replace(/^0x/i, ''), 16);
+  if (!Number.isFinite(start) || start < 0 || start > 0xFFFFFF) { toast('Bad start address.', 'warn'); return; }
+  if (!Number.isFinite(count) || count < 1 || count > 4096) { toast('Word count must be 1..4096.', 'warn'); return; }
+  const words = [];
+  for (let i = 0; i < count; i++) {
+    let v = null;
+    try { v = await memRead32(start + i * 4); } catch { v = null; }
+    words.push(v);
+    if ((i & 0x3F) === 0x3F) setStatus(`0x08 dump ${i + 1}/${count} words…`, 'working');
+  }
+  extDump = { start, words };
+  renderExtDump();
+  const nonzero = words.filter(w => w !== null && w !== 0).length;
+  setStatus(`0x08 dump complete — ${nonzero}/${count} non-zero words.`, 'ok');
+  log(`Extended dump @0x${start.toString(16)}: ${nonzero}/${count} non-zero ` +
+      `(zeros expected on most runtimes — 0x08 does NOT read flash, PROTOCOL.md §9.1).`, 'inf');
+}
+
+function renderExtDump() {
+  const box = $('ext-dump');
+  if (!box || !extDump) return;
+  const lines = [];
+  for (let i = 0; i < extDump.words.length; i += 4) {
+    const addr = extDump.start + i * 4;
+    lines.push(addr.toString(16).padStart(8, '0') + ':  ' +
+      extDump.words.slice(i, i + 4).map(w => w === null ? '        ' : (w >>> 0).toString(16).padStart(8, '0')).join(' '));
+  }
+  box.textContent = lines.join('\n');
+  box.scrollTop = 0;
+}
+
+function exportExtDump() {
+  if (!extDump) { toast('Run a 0x08 dump first.', 'warn'); return; }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const buf = new ArrayBuffer(extDump.words.length * 4);
+  const dv  = new DataView(buf);
+  extDump.words.forEach((w, i) => { if (w !== null) dv.setUint32(i * 4, w >>> 0, true); });
+  downloadBlob(`kt-ext-0x${extDump.start.toString(16)}-${stamp}.bin`, new Blob([buf], { type: 'application/octet-stream' }));
+  log(`Extended dump exported (${extDump.words.length} words, LE).`, 'inf');
+}
+
+/* ── 12.6 AutoEQ import ── */
+
+const AUTOEQ_TYPES = {
+  PEAKING: 0, PEAK: 0,
+  LOW_PASS: 1, LOWPASS: 1, LPF: 1,
+  HIGH_PASS: 2, HIGHPASS: 2, HPF: 2,
+  LOW_SHELF: 3, LOWSHELF: 3, LOW_SHELF_FILTER: 3,
+  HIGH_SHELF: 4, HIGHSHELF: 4, HIGH_SHELF_FILTER: 4,
+};
+
+function applyAutoEQ(filters, fname) {
+  if (!state.banks) { toast('Connect a device first.', 'warn'); return; }
+  const n = Math.min(filters.length, state.banks.DAC.length);
+  filters.slice(0, n).forEach((f, i) => {
+    const b = state.banks.DAC[i];
+    b.freq = Math.round(clamp(f.frequency ?? f.freq ?? 1000, 20, 20000));
+    b.gain = clamp(f.gain ?? 0, -12, 12);
+    b.q    = clamp(f.q ?? 0.707, 0.1, 16);
+    const t = AUTOEQ_TYPES[String(f.type ?? 'PEAKING').toUpperCase().replace(/\s+/g, '_')];
+    b.filterType = t ?? 0;
+  });
+  state.bank = 'DAC';
+  buildBandUI();
+  state.bands.forEach((_, i) => { refreshBandUI(i); markDirty(i); });
+  visualizer.bands = state.bands;
+  visualizer?.draw(state.bands);
+  toast(`AutoEQ "${fname}": ${n} band(s) mapped → Write All Bands to apply.`, 'ok', 6000);
+  log(`AutoEQ import: ${n} filters from ${fname} (types mapped to vendor 0-4).`, 'inf');
+}
+
+/* ── 12.7 connect-time extras (identity + DRC readback) ── */
+
+async function postConnectExtras() {
+  try { await refreshIdentity(); }
+  catch (err) { dbg(`identity read failed: ${err.message}`); }
+  try { await fetchDRC(); }
+  catch (err) { dbg(`DRC readback failed: ${err.message}`); }
+}
+
+/* ── 12.8 wiring ── */
+
+(() => {
+  // profile select
+  const sel = $('sel-profile');
+  if (sel) sel.innerHTML = Object.keys(PROFILES).map(k => `<option value="${k}">${k}</option>`).join('');
+
+  $('btn-id-read')?.addEventListener('click', async () => {
+    try { await refreshIdentity(); }
+    catch (err) { log('Identity read failed: ' + err.message, 'err'); setStatus('Identity read failed.', 'error'); }
+  });
+  $('btn-id-refresh')?.addEventListener('click', async () => {
+    try { await refreshIdentity(); }
+    catch (err) { log('Identity read failed: ' + err.message, 'err'); }
+  });
+  $('btn-apply-profile')?.addEventListener('click', () => {
+    const n = $('sel-profile')?.value;
+    if (n) applyProfileName(n);
+  });
+
+  $('btn-id-write-str')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    if (!confirm('Overwrite the USB manufacturer / product / serial strings on the device?\n\nRun-mode RAM write — replug to see; persist with Save to Flash where supported.')) return;
+    try { await writeUsbStrings(); }
+    catch (err) { log('USB string write failed: ' + err.message, 'err'); setStatus('USB string write failed.', 'error'); }
+  });
+  $('btn-id-write-vpid')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    try { await writeVidPid(); }
+    catch (err) { log('VID/PID write failed: ' + err.message, 'err'); setStatus('VID/PID write failed.', 'error'); }
+  });
+
+  const wireToggle = id => $(id)?.addEventListener('click', () => $(id).classList.toggle('active'));
+  ['ng-en', 'lim-en', 'lim-soft'].forEach(wireToggle);
+
+  const wireSliderLabel = (sl, out) => $(sl)?.addEventListener('input', () => {
+    $(out).textContent = `${$(sl).value} dB`;
+  });
+  wireSliderLabel('ng-th', 'ng-th-val');
+  wireSliderLabel('ng-gv', 'ng-gv-val');
+  wireSliderLabel('lim-th', 'lim-th-val');
+
+  $('btn-ng-apply')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    try { await writeNoiseGate(); }
+    catch (err) { log('NoiseGate write failed: ' + err.message, 'err'); setStatus('NoiseGate write failed.', 'error'); }
+  });
+  $('btn-lim-apply')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    try { await writeLimiter(); }
+    catch (err) { log('Limiter write failed: ' + err.message, 'err'); setStatus('Limiter write failed.', 'error'); }
+  });
+
+  $('btn-reg-dump')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    try { await dumpRegisters(); }
+    catch (err) { log('Register dump failed: ' + err.message, 'err'); setStatus('Register dump failed.', 'error'); }
+  });
+  $('btn-reg-export-json')?.addEventListener('click', () => exportRegDump('json'));
+  $('btn-reg-export-csv')?.addEventListener('click', () => exportRegDump('csv'));
+
+  $('btn-ext-dump')?.addEventListener('click', async () => {
+    if (!hid.connected) return;
+    try { await dumpExtended(); }
+    catch (err) { log('0x08 dump failed: ' + err.message, 'err'); setStatus('0x08 dump failed.', 'error'); }
+  });
+  $('btn-ext-export')?.addEventListener('click', exportExtDump);
+})();

@@ -1,0 +1,28 @@
+Firmware sources — verify SHA-256 before flashing (full table in ../FIRMWARES.md)
+
+TANCHJIM_DSP_S_KT0211L_20240815_v1.0.2.bin
+  Official Tanchjim DSP S upgrade V1.0.2 zip
+  https://d1c6gk3tn6ydje.cloudfront.net/1875933634511282176%2Fde3560213f76846d44d7a10d2398a9da.zip
+  (linked from https://tanchjim.com/en/dsps-upgrade/ , dir tanchjim_dsps_upgrade_20240913/)
+
+KT02H20_TINHIFI_20240328_v1.0.1.bin
+  KT_USB_APP.zip vendor package (oshwhub attachment abd1556a453f4bd9b2ab419a47526bc2.zip)
+
+KT02F20_SDK_20250206_disable_jack.bin
+  https://image.lceda.cn/oshwhub/project/attachments/40fbb08fbb8246a4b9d1fb7f57fcf465.bin
+
+KT02F20_SDK_20250206_jack_GPIO_03.bin
+  https://image.lceda.cn/oshwhub/project/attachments/3aceb6dd52434d7c9707dd429d536834.bin
+
+KT0712_SDK_V2.1_20230724.bin
+  Carved from KT_BOOT_TOOL_1.0.58.exe Qt resources @ file offset 0xfbd841
+
+KT0206_boot_v1.05_20210608.bin
+  Carved from TANCHJIM_DSPS_BOOT_TOOL_1.0.03.exe -> embedded kt_usb_cmd_tool.exe
+  v1.3.16, zlib resource @ 0x4192c8
+
+KT0712_reset_spi_part1_224B.bin / part2_32B.bin
+  Carved from KT_BOOT_TOOL_1.0.58.exe resource array @ 0xfe4ad5 / 0xfe4bb9
+
+All images are vendor-published or vendor-embedded binaries for research/
+interoperability use. Never flash an image not built for YOUR unit.

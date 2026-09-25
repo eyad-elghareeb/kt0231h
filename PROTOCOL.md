@@ -394,3 +394,170 @@ SetupAPI enumeration, no device I/O) lists the test dongle as
    unmapped space. Software backup of this family is impossible — true
    backup needs hardware (SWD/SPI clip). Do not ship a dump button on the
    vendor protocol; the honest UI is the 0x08 memory peeker + register dump.
+
+---
+
+## 8. Addendum (v8 fork, 2026-09) — vendor-tool forensics results
+
+Full details in [`VENDOR-TOOLS.md`](VENDOR-TOOLS.md), [`CHIPS.md`](CHIPS.md),
+[`FIRMWARES.md`](FIRMWARES.md). Headlines affecting this document:
+
+- **Vendor chip roster** (KT_BOOT_TOOL comboBox, disassembled):
+  `KT0200 KT0201 KT0203N KT0206 KT0210 KT0211 KT0211L KT0210S KT0231H
+  KT02H20 KT02H22 KT02F20 KT02F21 KT02F22 KT70022 KT1200 KT0712`.
+  KT0210 (Bunny) and the 02F2x family are first-class citizens of the same
+  flasher. `KT Upgrade Tool 1.2.10` (new recovery) explicitly scopes itself
+  to `021X 0211L 02H0X 02F0X` via its INI name — KT0231H remains a
+  KT_BOOT_TOOL-only entry there.
+- **Boot PID `31B2:0001` confirmed**: the MSV2B `KT0206_boot_v1.05_20210608.bin`
+  RAM loader (extracted from Tanchjim's tool, now in `firmware/`) embeds a USB
+  descriptor with exactly VID `0x31B2` / PID `0x0001`. The boot panel's PID
+  triple `[0x0101, 0x0001, 0x0002]` stands.
+- **MSV2B KEY material**: the same boot image carries `KTCInitKey` /
+  `KTPrgKey` constants and a `BFLSH` tag — the KEY-unlock handshake on the
+  KT020x family is no longer opaque.
+- **KT0712 firmware recovered** (`KTM_TT_V3_flash_KT0712A`, KT0712_SDK_V2.1,
+  160,400 B) plus its reset loader — carved from KT_BOOT_TOOL resources; see
+  the resource map in `VENDOR-TOOLS.md` §3.
+- **Helios image layout triple-confirmed**: Tanchjim DSP S (0211L), TINHIFI
+  (02H20) and the vendor 02F20 SDK images share identical section offsets
+  (`REG:` @ 0x1000, DAC EQ @ 0x106A, ADC EQ @ 0x109A, bank-enable @ 0x10E8,
+  USB descriptors ~0xA0F8/0x116C) — §4's "locate tables by pattern" advice
+  remains correct for patching, but the fixed map is now known per platform.
+- **No dump primitive** (re-checks §7.7): carved `kt_usb_cmd_tool` verb list,
+  vendor write-only logs, and both boot loaders still expose no flash-read
+  path. Software backup remains impossible; hardware backup remains mandatory.
+- **Bunny DSP (KT0210)**: run-mode protocol identical (§1–2 apply); commit
+  `0x53` works and re-enumerates USB; chip ID via feature report `0x54`
+  (`TURN2CDC`). See `CHIPS.md` §4 for the per-chip differences table.
+
+---
+
+## 9. Addendum (v10, 2026-09) — tool + datasheet deep dive
+
+New material from a second disassembly pass over the vendor tools, the
+hardware-validated CDC RE (ParkWardRR `ktflash`, `docs/` sources), and the
+KT02F20 datasheet. Chip/image internals moved to
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+### 9.1 Extended read `0x08` — full semantics
+
+Two address regimes exist (upstream `KT_USB_PROTOCOL.md` + vendor app
+decompile agree):
+
+- **addr ≤ 0x100** (DSP register space): use `0x52`; value returns at
+  payload[6..9].
+- **addr > 0x100** (extended space): use `0x08`; the vendor app runs a bulk
+  loop (`addr += 4` per iteration, decompiled `FUN_0054d170`) and takes the
+  value from **payload[0..3]** — not [6..9] like every other response.
+
+⚠ Hardware-disproven as a backup path (ParkWardRR, 2026-09-05): `0x08` dumps
+at `0x0` / `0x80000` / `0x83000` return all-zeros on KT02H20 — it reads
+unmapped space, **not flash**. The companion `0x33` handshake times out on
+JA11/KT02H20 runtimes. Keep treating `0x08` as a debug peeker only.
+
+### 9.2 CDC bootloader — hardware-validated behaviours
+
+Confirmed live on a real dongle (Moondrop-branded KT02H20; full native
+reflash of the stock `JA11_V2.2.bin` succeeded 2026-09-05):
+
+| Behaviour | Observed |
+|---|---|
+| `KTM` (`1e 4b 54 4d`) → `78` | fresh bootloader only; the parser is **one-shot sequential** — after `KTM` is consumed, re-opening the port and re-sending `KTM` gets no reply (state machine does not reset) |
+| `KEY` (`f0 4b 45 59`) | replies `78 00 78` |
+| `CHP` (`d2 43 48 50`) | 13-byte blob `b2 85 40 12` + `"KT02H20B"` + sum8 `76` — same shape as §3's captured responses |
+| Unlock → re-enum | device instance `USB\VID_8888&PID_CDC0\KT_VIRTUAL_COM_PORT` (COM3, driver-free) |
+| `ZRST` (`5a 52 53 54`) | honored only from a fresh bootloader / correct state; from a dirtied mid-state: no reply, stays in bootloader |
+| CRC-32 | table at the bootloader's `DAT_0120e020` is byte-exact canonical zlib CRC-32 (poly `0xEDB88320`) |
+
+Practical flasher rules: drive the token sequence in order, never assume a
+re-plug of the *port* resets the boot state machine, and treat every
+capture's last CHP byte as `sum8(all preceding bytes)`.
+
+### 9.3 Datasheet-anchored register semantics (KT02F20 V0.5, CN)
+
+The hardware datasheet names the functional blocks behind the register map
+(it does not document the HID transport):
+
+- 5-band EQ on **each** path (upstream mic + downstream DAC) — silicon-level
+  confirmation of the §2 band counts.
+- `DRC_EN` + `DRC_TH<3:0>` = the enable/ratio fields of the §2 DRC block.
+- Input PGA via `ADC_FILT_CFG_0` (= run-mode 0x3A index table);
+  sidetone `SIDETONE_L/R_VOL` at 1 dB steps (TBD in V0.5); host-side
+  UAC volume in 0.5 dB steps.
+- Internal 2 Mbit (256 KB) flash with **UART bootloader** (GPIO2 = Rx,
+  GPIO3 = Tx at power-on, ≥ 921600 baud, CP2103/PL2303-class bridge) and a
+  USB update path — the serial transport speaks the §3 token protocol.
+- **SWD on GPIO4 (CLK) / GPIO5 (DAT)** — the sanctioned hardware-backup
+  entry point where test pads allow it. Full table in
+  `ARCHITECTURE.md` §3.
+
+### 9.4 What the deep pass did NOT find
+
+Re-checked against every recovered binary: still **no flash-read/dump
+primitive** in any vendor tool or bootloader (`kt_usb_cmd_tool` verb list,
+write-only logs, MSV2B + Helios loaders); still **no AGC/Expander/Compander
+registers** written by the vendor app (UI stubs only); the `0x69` 1024-B
+block tail remains uncracked — best lead is now the NDS32 loader blob
+(`ARCHITECTURE.md` §5).
+
+---
+
+## 10. Addendum (v11, 2026-09) — full-control feature set + KTSPI read finding
+
+v11 turns the app into a complete control surface. Everything below is
+implemented in the app and wired to the register map; semantics sources are
+§1–§2, §9, upstream `ktmicro-tools` and the vendor datasheet.
+
+### 10.1 KT_BOOT_TOOL `flash_read_all` — the one software read that exists
+
+String-context reconstruction (`scripts/kt_boot_tokens.py` + context dumps,
+v11): the debug-string block around KT_BOOT_TOOL's flash verbs reads
+
+```
+… flash_cancel · flash_read_crc :crc8 · flash_read_crc :crc32
+… flash_read_all (×3 prints) · KTM_TT_V3_flash · default · ./test.bin
+… spi flash · BootInterface … KTSPI (menu) · checkBox_ktspi_test
+```
+
+Interpretation: `flash_read_all` writes the read-back flash image to
+**`./test.bin`**, and it is scoped to the **KTSPI / KT0712 external-SPI
+bridge flow** (the `KTM_TT_V3_flash` name + reset-spi loaders sit in the
+same block). The strings are absent from `KT Upgrade Tool` and the carved
+`kt_usb_cmd_tool`. Consequence: the §7.7 verdict is refined, not revoked —
+**Helios internal flash remains un-readable in software**; KT0712-class
+devices with external SPI flash may be dumpable by the vendor tool itself.
+Full dump/recovery paths: [`HARDWARE-DUMP.md`](HARDWARE-DUMP.md).
+
+### 10.2 Chip prober (app: Device ID card)
+
+Read-only identification of unknown KT dongles without writing anything:
+
+1. Identity block: version `0x00–0x07`, flags `0x01` (bit9 = single-DAC),
+   build date `0x08–0x0D`, USB strings `0x40–0x56`, packed VID:PID `0x5B`,
+   magic `0xE1` (expect `0x12345678`).
+2. Band-register discriminator: read `0x26` and `0x35` — on Helios `0x26`
+   is DAC band0's A-reg (`[freq:16][gain×10]`), on KT0231H `0x35` is.
+   Whichever address decodes as a sane A-reg (freq 20–20000, |gain×10| ≤
+   120) names the layout — works even after the factory EQ was re-tuned.
+3. Version-string hint: `"CDS…"` ⇒ KT0211L family.
+4. One-click **Apply Profile** override re-binds the active profile
+   (rebuilds banks, updates save gating) — the escape hatch for unknown
+   OEM product strings that match no `matchKeys`.
+
+### 10.3 New write surfaces (all run-mode `0x57`)
+
+| Feature | Registers | Semantics |
+|---|---|---|
+| USB rename | `0x40–0x47` mfr · `0x48–0x4F` product · `0x50–0x56` serial | LE32 ASCII chunks, run-mode RAM; replug to see; persist with `0x53` where supported |
+| USB VID/PID | `0x5B` = `[PID:16][VID:16]` | confirm-gated; re-enumerates on replug |
+| Noise Gate | `0x71 = [EN bit7\|0x3C][THh][THl][GV]` bytes = 256+dB · `0x72 = [AT][RT] ms` · `0x73 = hold 0x000A` | upstream-verified on KT02H20 |
+| Limiter | `0x78 = [EN bit7+SOFT bit6][rsv][TH]` · `0x79 = [AT][RT] ms` | upstream-verified on KT02H20 |
+| ADC (mic) EQ bank | Helios EN `0x18`, bands `0x1A–0x23` (5-band, same encoding as DAC) | upstream-verified on KT02H20; the DAC/ADC bank toggle now appears on Helios profiles too |
+
+### 10.4 Read surfaces
+
+- **Register Explorer**: full `0x00–0xFF` sweep via `0x52` with annotated
+  labels (known registers decoded by name), JSON/CSV export.
+- **0x08 extended dump**: arbitrary start/count bulk word read with .bin
+  export — honest labeling per §9.1 (zeros on most runtimes, not flash).

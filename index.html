@@ -4,130 +4,280 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
-  <title>KT0231H DAC Control - Offline</title>
+  <title>KTLAB — KTMicro DSP Console</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <div class="header-left">
-      <span class="logo-mark">◆</span>
-      <span class="app-title">KT0231H DAC Control</span>
-      <span class="app-sub">Offline · KT0231H (0x31B2:0x1132) + KT02H20 compat</span>
+
+  <!-- ══════════════ APP BAR ══════════════ -->
+  <header class="appbar">
+    <div class="brand">
+      <svg class="brand-glyph" viewBox="0 0 28 28" aria-hidden="true">
+        <path d="M2 14h4l3-9 4 18 4-13 3 6 2-2h4" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">KT<span class="brand-accent">LAB</span></span>
+        <span class="brand-desc">KTMicro DSP Console</span>
+      </div>
+      <nav class="chip-badges" aria-label="Supported chips">
+        <span class="chip-badge" title="KT0231H — 6-band DAC + 6-band ADC banks, write ACK 0x4F">KT0231H <em>0x1132</em></span>
+        <span class="chip-badge" title="KT0211L — Tanchjim DSP S · Tangzu Wan'er 2 DSP (owner-reported). Save 0x53 verified.">KT0211L <em>0x0111</em></span>
+        <span class="chip-badge" title="KT02H20 — FiiO JA11, JCALLY JM12, Moondrop KT02, TINHIFI. Save 0x53 verified.">KT02H20 <em>0x0111</em></span>
+        <span class="chip-badge" title="KT0210 — Tanchjim Bunny DSP, chip ID TURN2CDC. Save 0x53 verified (USB re-enum).">KT0210 <em>0x1112</em></span>
+        <span class="chip-badge" title="KT02F20 — Helios map image-confirmed via two vendor SDK builds (PID 0x0111). Save unverified.">KT02F20 <em>0x0111</em></span>
+        <span class="chip-badge" title="KT02F21 / KT02F22 / KT02H22 / KT0210S — vendor-roster chips, expected Helios map, name-matched only. Probe & report.">02F21·02F22·02H22·0210S</span>
+      </nav>
     </div>
-    <div class="header-right">
+
+    <div class="appbar-actions">
       <span id="queue-badge" class="queue-badge" style="display:none"></span>
-      <span id="device-name" class="device-name">No device</span>
+      <span id="device-name" class="device-pill">No device</span>
       <button id="btn-connect" class="btn btn-primary">Connect USB</button>
-      <button id="btn-disconnect" class="btn btn-danger" disabled>Disconnect</button>
+      <button id="btn-disconnect" class="btn btn-ghost" disabled>Disconnect</button>
     </div>
   </header>
 
+  <!-- ══════════════ STATUS STRIP ══════════════ -->
   <div id="status-bar" class="status-bar status-idle" role="status" aria-live="polite">
-    <span id="status-text">Not connected - click Connect USB to begin.</span>
+    <span class="status-dot" aria-hidden="true"></span>
+    <span id="status-text">Not connected — click Connect USB to begin.</span>
   </div>
 
-  <main class="main">
-    <section class="card visualizer-card">
-      <div class="card-title">Frequency Response</div>
+  <!-- ══════════════ WORKSPACE ══════════════ -->
+  <main class="layout">
+
+    <!-- 01 · RESPONSE GRAPH -->
+    <section class="card area-viz">
+      <div class="card-title"><span class="idx">01</span>Frequency Response<span class="title-note">log 20 Hz – 20 kHz · −12…+12 dB</span></div>
       <canvas id="eq-canvas" class="eq-canvas" aria-label="Frequency response graph" role="img"></canvas>
     </section>
 
-    <section class="card global-controls">
-      <div class="card-title">Global Controls</div>
-
-      <div class="control-row">
-        <label class="control-label">EQ Switch</label>
-        <div class="toggle-group">
-          <button id="btn-eq-on" class="toggle-btn active" disabled>ON</button>
-          <button id="btn-eq-off" class="toggle-btn" disabled>OFF</button>
-        </div>
+    <!-- 02 · PARAMETRIC EQ -->
+    <section class="card area-eq">
+      <div class="card-title">
+        <span class="idx">02</span>
+        <span id="eq-section-title">Parametric EQ — DAC bank</span>
+        <span class="eq-switch" id="eq-switch">
+          <button id="btn-eq-on"  class="toggle-btn active" disabled>EQ&nbsp;ON</button>
+          <button id="btn-eq-off" class="toggle-btn" disabled>EQ&nbsp;OFF</button>
+        </span>
+        <span class="eq-switch" id="bank-toggle" style="display:none"
+              title="KT0231H has two independent 6-band banks: DAC (0x34/0x35–0x40) and ADC (0x41/0x42–0x4D)">
+          <button id="btn-bank-dac" class="toggle-btn active" disabled>DAC&nbsp;BANK</button>
+          <button id="btn-bank-adc" class="toggle-btn" disabled>ADC&nbsp;BANK</button>
+        </span>
       </div>
 
-      <div class="control-row" id="bank-toggle" style="display:none">
-        <label class="control-label" title="KT0231H has two independent 6-band banks: DAC (0x34/0x35-0x40) and ADC (0x41/0x42-0x4D)">EQ Bank</label>
-        <div class="toggle-group">
-          <button id="btn-bank-dac" class="toggle-btn active" disabled>DAC</button>
-          <button id="btn-bank-adc" class="toggle-btn" disabled>ADC</button>
-        </div>
-      </div>
-
-      <div class="control-row btn-row">
-        <button id="btn-read-all" class="btn btn-secondary" disabled title="R">Read from Device</button>
-        <button id="btn-write-all" class="btn btn-secondary" disabled title="W">Write All Bands</button>
-        <button id="btn-save-flash" class="btn btn-secondary" disabled style="display:none" title="Vendor SAVE command (0x53): commit DSP state to flash. Device reboots. KT0211L/KT02H20 only.">Save to Flash</button>
-        <button id="btn-mempeek" class="btn btn-ghost" disabled title="Read-only 0x08 word peek (16 words from a hex address). Cannot modify the device.">Peek memory</button>
-        <button id="btn-reset-eq" class="btn btn-ghost" disabled>Reset EQ (0 dB)</button>
-      </div>
-
-      <div class="shortcut-hint">
-        Shortcuts: <kbd>R</kbd> Read &nbsp; <kbd>W</kbd> Write &nbsp;
-        <kbd>Ctrl+S</kbd> Save preset &nbsp; <kbd>Ctrl+Z</kbd> Undo band &nbsp;
-        <kbd>Esc</kbd> Clear log
-      </div>
-    </section>
-
-    <section class="card volume-section">
-      <div class="card-title">Volume Controls</div>
-
-      <div class="control-row">
-        <label class="control-label" title="Register 0x3A — analog ADC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): index into {0,-6,8,14,20,26,32,44 dB}">A_ADC PGA</label>
-        <select id="pga-adc" class="volume-select" disabled></select>
-      </div>
-
-      <div class="control-row">
-        <label class="control-label" title="Register 0x3B — analog DAC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): 0=mute, idx 1..15 → 1.5·(idx−1)−18 dB">A_DAC PGA</label>
-        <select id="pga-dac" class="volume-select" disabled></select>
-      </div>
-
-      <div class="control-row">
-        <label class="control-label" title="Register 0x65 byte0 — digital ADC gain, signed 0.5dB steps (vendor-confirmed on KT0211L/KT02H20)">
-          DIG_ADC
-          <span class="value-badge" id="dig-adc-val">+0.0 dB</span>
-        </label>
-        <input type="range" id="dig-adc" class="slider slider-wide"
-               min="-64" max="63.5" step="0.5" value="0" disabled />
-      </div>
-
-      <div class="control-row">
-        <label class="control-label" title="Register 0x66 byte0 — digital DAC gain, signed 0.5dB steps (stereo models: byte0=DACL, byte1=DACR)">
-          DIG_DAC Preamp
-          <span class="value-badge" id="global-gain-val">0.0 dB</span>
-        </label>
-        <input type="range" id="global-gain" class="slider slider-wide"
-               min="-64" max="63.5" step="0.5" value="0" disabled />
-      </div>
-    </section>
-
-    <section class="card eq-section">
-      <div class="card-title" id="eq-section-title">Parametric EQ — DAC bank</div>
       <div id="eq-bands" class="eq-bands"></div>
+
+      <div class="eq-actions">
+        <button id="btn-read-all"   class="btn btn-secondary" disabled title="Shortcut: R">Read from Device</button>
+        <button id="btn-write-all"  class="btn btn-primary"   disabled title="Shortcut: W">Write All Bands</button>
+        <button id="btn-save-flash" class="btn btn-accent"    disabled style="display:none"
+                title="Vendor SAVE command (0x53): commit DSP state to flash. Device reboots. KT0211L / KT02H20 / KT0210 only.">Save to Flash</button>
+        <button id="btn-reset-eq"   class="btn btn-ghost"    disabled>Reset EQ (0 dB)</button>
+        <button id="btn-mempeek"    class="btn btn-ghost"    disabled
+                title="Read-only 0x08 word peek (16 words from a hex address). Cannot modify the device.">Peek Memory</button>
+      </div>
     </section>
 
-    <section class="card presets-section">
-      <div class="card-title presets-header">
-        <span>Local Presets</span>
-        <div class="preset-actions">
-          <button id="btn-export" class="btn btn-ghost btn-sm" disabled>Export JSON</button>
-          <button id="btn-import" class="btn btn-ghost btn-sm" disabled>Import JSON</button>
-          <input type="file" id="file-import" accept=".json" style="display:none" />
+    <!-- ═══════ SIDEBAR ═══════ -->
+    <aside class="area-side">
+
+      <!-- 03 · GAIN STRUCTURE -->
+      <section class="card">
+        <div class="card-title"><span class="idx">03</span>Gain Structure</div>
+
+        <div class="control-row">
+          <label class="control-label" title="Register 0x3A — analog ADC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): index into {0,−6,8,14,20,26,32,44 dB}">A_ADC PGA</label>
+          <select id="pga-adc" class="volume-select" disabled></select>
         </div>
-      </div>
-      <div class="preset-row">
-        <input type="text" id="preset-name" class="preset-input"
-               placeholder="Preset name... (or Ctrl+S)" maxlength="40" />
-        <button id="btn-save-preset" class="btn btn-secondary" disabled>Save Current</button>
-      </div>
-      <div id="preset-list" class="preset-list"></div>
-    </section>
 
-    <section class="card log-section">
-      <div class="card-title log-header">
-        <span>USB Log</span>
-        <button id="btn-clear-log" class="btn btn-ghost btn-sm" title="Esc">Clear</button>
+        <div class="control-row">
+          <label class="control-label" title="Register 0x3B — analog DAC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): 0=mute, idx 1..15 → 1.5·(idx−1)−18 dB">A_DAC PGA</label>
+          <select id="pga-dac" class="volume-select" disabled></select>
+        </div>
+
+        <div class="control-row">
+          <label class="control-label" title="Register 0x65 byte0 — digital ADC gain, signed 0.5 dB steps (vendor-confirmed on KT0211L/KT02H20)">
+            DIG_ADC <span class="value-badge" id="dig-adc-val">+0.0 dB</span>
+          </label>
+          <input type="range" id="dig-adc" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
+        </div>
+
+        <div class="control-row">
+          <label class="control-label" title="Register 0x66 byte0 — digital DAC gain, signed 0.5 dB steps (stereo models: byte0=DACL, byte1=DACR)">
+            DIG_DAC Preamp <span class="value-badge" id="global-gain-val">0.0 dB</span>
+          </label>
+          <input type="range" id="global-gain" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
+        </div>
+      </section>
+
+      <!-- 04 · PRESETS -->
+      <section class="card">
+        <div class="card-title">
+          <span class="idx">04</span>Local Presets
+          <span class="title-actions">
+            <button id="btn-export" class="btn btn-ghost btn-sm" disabled>Export</button>
+            <button id="btn-import" class="btn btn-ghost btn-sm" disabled>Import</button>
+            <input type="file" id="file-import" accept=".json" style="display:none" />
+          </span>
+        </div>
+        <div class="preset-row">
+          <input type="text" id="preset-name" class="preset-input"
+                 placeholder="Preset name… (Ctrl+S)" maxlength="40" />
+          <button id="btn-save-preset" class="btn btn-secondary" disabled>Save</button>
+        </div>
+        <div id="preset-list" class="preset-list"></div>
+      </section>
+
+      <!-- 05 · DEVICE ID & CHIP PROBER -->
+      <section class="card">
+        <div class="card-title"><span class="idx">05</span>Device ID &amp; Chip Prober<span class="title-note">read-only fingerprint</span></div>
+        <div class="eq-actions">
+          <button id="btn-id-read" class="btn btn-secondary btn-sm" disabled>Read &amp; Probe</button>
+          <button id="btn-apply-profile" class="btn btn-secondary btn-sm" disabled>Apply Profile ▸</button>
+          <select id="sel-profile" class="volume-select" style="min-width:132px"></select>
+        </div>
+        <div id="dev-id" class="mono-note">Not read yet — connect, then Read &amp; Probe. Unknown chips get classified by their register layout (see PROTOCOL.md §10).</div>
+      </section>
+
+      <!-- 06 · USB IDENTITY (RENAME) -->
+      <section class="card card-dashed">
+        <div class="card-title"><span class="idx">06</span>USB Identity<span class="title-note">rename · 0x40–0x5B</span></div>
+        <p class="hint-text">Edits the USB string descriptors the host displays (run-mode RAM; persist with Save to Flash where supported). VID/PID changes re-enumerate the device — note the old values first.</p>
+        <div class="control-row"><label class="control-label">Manufacturer</label><input id="usb-mfr" class="preset-input" maxlength="8" placeholder="8 chars max" /></div>
+        <div class="control-row"><label class="control-label">Product</label><input id="usb-prod" class="preset-input" maxlength="8" placeholder="8 chars max" /></div>
+        <div class="control-row"><label class="control-label">Serial</label><input id="usb-serial" class="preset-input" maxlength="7" placeholder="7 chars max" /></div>
+        <div class="control-row"><label class="control-label">VID : PID</label>
+          <input id="usb-vid" class="preset-input mono-note" style="max-width:84px;padding:7px 8px" maxlength="4" placeholder="31B2" />
+          <input id="usb-pid" class="preset-input mono-note" style="max-width:84px;padding:7px 8px" maxlength="4" placeholder="0111" />
+        </div>
+        <div class="eq-actions">
+          <button id="btn-id-refresh" class="btn btn-ghost btn-sm" disabled>Read current</button>
+          <button id="btn-id-write-str" class="btn btn-secondary btn-sm" disabled>Write strings</button>
+          <button id="btn-id-write-vpid" class="btn btn-danger btn-sm" disabled>Write VID/PID</button>
+        </div>
+      </section>
+
+      <!-- 07 · DRC -->
+      <section class="card">
+        <div class="card-title"><span class="idx">07</span>DRC — Gate &amp; Limiter<span class="title-note">0x71–0x73 · 0x78–0x79</span></div>
+        <p class="hint-text">Vendor-app-verified semantics (KT02H20). Thresholds encode as byte = 256 + dB (dB ≤ 0). Gate flags 0x3C, hold 10 ms fixed.</p>
+        <div class="control-row">
+          <label class="control-label">Noise Gate
+            <span class="eq-switch"><button id="ng-en" class="toggle-btn" disabled>EN</button></span>
+          </label>
+          <input type="range" id="ng-th" class="slider" min="-96" max="0" step="1" value="-60" disabled />
+          <span class="value-badge" id="ng-th-val">-60 dB</span>
+        </div>
+        <div class="control-row">
+          <label class="control-label">Gate volume</label>
+          <input type="range" id="ng-gv" class="slider" min="-96" max="0" step="1" value="-24" disabled />
+          <span class="value-badge" id="ng-gv-val">-24 dB</span>
+        </div>
+        <div class="control-row">
+          <label class="control-label">NG AT / RT ms</label>
+          <input type="number" id="ng-at" class="preset-input" style="max-width:92px" value="20" />
+          <input type="number" id="ng-rt" class="preset-input" style="max-width:92px" value="200" />
+        </div>
+        <div class="eq-actions"><button id="btn-ng-apply" class="btn btn-secondary btn-sm" disabled>Apply Noise Gate</button></div>
+        <div class="control-row" style="margin-top:14px">
+          <label class="control-label">Limiter
+            <span class="eq-switch"><button id="lim-en" class="toggle-btn" disabled>EN</button><button id="lim-soft" class="toggle-btn" disabled>SOFT</button></span>
+          </label>
+          <input type="range" id="lim-th" class="slider" min="-96" max="0" step="1" value="-12" disabled />
+          <span class="value-badge" id="lim-th-val">-12 dB</span>
+        </div>
+        <div class="control-row">
+          <label class="control-label">LIM AT / RT ms</label>
+          <input type="number" id="lim-at" class="preset-input" style="max-width:92px" value="5" />
+          <input type="number" id="lim-rt" class="preset-input" style="max-width:92px" value="100" />
+        </div>
+        <div class="eq-actions"><button id="btn-lim-apply" class="btn btn-secondary btn-sm" disabled>Apply Limiter</button></div>
+      </section>
+
+      <!-- 08 · REGISTER EXPLORER -->
+      <section class="card card-dashed">
+        <div class="card-title"><span class="idx">08</span>Register Explorer<span class="title-note">0x00–0xFF · 0x08 extended</span></div>
+        <div class="eq-actions">
+          <button id="btn-reg-dump" class="btn btn-secondary btn-sm" disabled>Dump 0x00–0xFF</button>
+          <button id="btn-reg-export-json" class="btn btn-ghost btn-sm">JSON</button>
+          <button id="btn-reg-export-csv" class="btn btn-ghost btn-sm">CSV</button>
+        </div>
+        <div id="reg-dump" class="log-box" style="height:130px">— no dump yet —</div>
+        <div class="eq-actions" style="margin-top:10px">
+          <input id="ext-addr" class="preset-input mono-note" style="max-width:120px;padding:7px 8px" value="80000" placeholder="start hex" />
+          <input id="ext-count" class="preset-input mono-note" style="max-width:80px;padding:7px 8px" value="64" placeholder="words" />
+          <button id="btn-ext-dump" class="btn btn-secondary btn-sm" disabled>0x08 Dump</button>
+          <button id="btn-ext-export" class="btn btn-ghost btn-sm">Export .bin</button>
+        </div>
+        <p class="hint-text">0x08 reads the extended/RAM space — returns zeros on most runtimes and is <b>not</b> a flash dump (PROTOCOL.md §9.1). For a true backup see <code>HARDWARE-DUMP.md</code>.</p>
+        <div id="ext-dump" class="log-box" style="height:100px">— no dump yet —</div>
+      </section>
+
+      <!-- 09 · FIRMWARE TOOLS (restored v7 panels) -->
+      <section class="card card-dashed">
+        <div class="card-title"><span class="idx">09</span>Firmware BIN Patcher<span class="title-note">offline image surgery</span></div>
+        <p class="hint-text">Load a KT factory image, inspect the embedded EQ tables, patch them with the current bands, export a flashable BIN. Flash with the Boot panel below or the vendor <code>KT_BOOT_TOOL</code>.</p>
+        <div class="eq-actions">
+          <button id="btn-fw-load" class="btn btn-secondary btn-sm">Load .bin</button>
+          <button id="btn-fw-patch" class="btn btn-secondary btn-sm" disabled>Patch tables</button>
+          <button id="btn-fw-export" class="btn btn-secondary btn-sm" disabled>Export .bin</button>
+          <input type="file" id="file-fw" accept=".bin" style="display:none" />
+        </div>
+        <div id="fw-info" class="mono-note">No image loaded.</div>
+      </section>
+
+      <!-- 10 · BOOT MODE -->
+      <section class="card card-dashed">
+        <div class="card-title"><span class="idx">10</span>Boot-mode Flasher<span class="title-note">PID 31B2:0001/0101</span></div>
+        <p class="hint-text">Connect the dongle in bootloader mode (vendor boot PID <code>31B2:0001</code>) and write its <strong>own backed-up, patched</strong> image. Never flash a foreign BIN. Type <code>FLASH</code> to arm the write.</p>
+        <div class="eq-actions">
+          <button id="btn-boot-connect"    class="btn btn-secondary btn-sm">Boot Connect</button>
+          <button id="btn-boot-disconnect" class="btn btn-ghost btn-sm" disabled>Disconnect</button>
+          <button id="btn-boot-info"       class="btn btn-ghost btn-sm">Info</button>
+        </div>
+        <div class="boot-confirm-row">
+          <input type="text" id="boot-confirm" class="preset-input" placeholder="type FLASH to arm" spellcheck="false" />
+        </div>
+        <button id="btn-boot-flash" class="btn btn-danger btn-wide" disabled>Flash Patched Image</button>
+        <div id="boot-progress" class="boot-progress" style="display:none">
+          <div id="boot-bar" class="boot-bar"></div>
+        </div>
+        <div id="boot-info" class="mono-note">Bootloader not connected.</div>
+      </section>
+
+    </aside>
+
+    <!-- 11 · USB LOG -->
+    <section class="card area-log">
+      <div class="card-title">
+        <span class="idx">11</span>USB Log
+        <span class="title-actions">
+          <button id="btn-clear-log" class="btn btn-ghost btn-sm" title="Shortcut: Esc">Clear</button>
+        </span>
       </div>
       <div id="log" class="log-box"></div>
     </section>
+
   </main>
+
+  <!-- ══════════════ FOOTER ══════════════ -->
+  <footer class="footer">
+    <div class="footer-left">
+      <span class="dev-legend" title="Product-string → profile routing">
+        <b>Routing:</b> <code>CDS… / 0211… / WAN'ER / TANGZU</code> → KT0211L ·
+        <code>KT02H20… / JM12</code> → KT02H20 · <code>TANCHJIM BUNNY</code> → KT0210 ·
+        <code>02F20</code> → KT02F20 · <code>02F21/02F22/02H22/0210S</code> → roster profiles ·
+        <code>0x1132</code> → KT0231H · else DEFAULT (Helios map, probe-gated)
+      </span>
+    </div>
+    <div class="footer-right shortcut-hint">
+      <kbd>R</kbd> Read <kbd>W</kbd> Write <kbd>Ctrl+S</kbd> Preset <kbd>Ctrl+Z</kbd> Undo band <kbd>Esc</kbd> Clear log
+    </div>
+  </footer>
 
   <div id="toast-root" aria-live="polite" aria-atomic="true"></div>
   <script src="app.js"></script>
