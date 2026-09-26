@@ -1,285 +1,644 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="graphite" data-accent="mint">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="color-scheme" content="dark" />
-  <title>KTLAB — KTMicro DSP Console</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark light" />
+<title>KTLAB — KTMicro DSP Console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><rect width='28' height='28' rx='7' fill='%230a0e13'/><path d='M3 14h3l2.5-7 3.5 14 3-10 2.2 5 1.5-2H25' fill='none' stroke='%233fe0c0' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
 
-  <!-- ══════════════ APP BAR ══════════════ -->
-  <header class="appbar">
-    <div class="brand">
-      <svg class="brand-glyph" viewBox="0 0 28 28" aria-hidden="true">
-        <path d="M2 14h4l3-9 4 18 4-13 3 6 2-2h4" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <div class="brand-text">
-        <span class="brand-name">KT<span class="brand-accent">LAB</span></span>
-        <span class="brand-desc">KTMicro DSP Console</span>
-      </div>
-      <nav class="chip-badges" aria-label="Supported chips">
-        <span class="chip-badge" title="KT0231H — 6-band DAC + 6-band ADC banks, write ACK 0x4F">KT0231H <em>0x1132</em></span>
-        <span class="chip-badge" title="KT0211L — Tanchjim DSP S · Tangzu Wan'er 2 DSP (owner-reported). Save 0x53 verified.">KT0211L <em>0x0111</em></span>
-        <span class="chip-badge" title="KT02H20 — FiiO JA11, JCALLY JM12, Moondrop KT02, TINHIFI. Save 0x53 verified.">KT02H20 <em>0x0111</em></span>
-        <span class="chip-badge" title="KT0210 — Tanchjim Bunny DSP, chip ID TURN2CDC. Save 0x53 verified (USB re-enum).">KT0210 <em>0x1112</em></span>
-        <span class="chip-badge" title="KT02F20 — Helios map image-confirmed via two vendor SDK builds (PID 0x0111). Save unverified.">KT02F20 <em>0x0111</em></span>
-        <span class="chip-badge" title="KT02F21 / KT02F22 / KT02H22 / KT0210S — vendor-roster chips, expected Helios map, name-matched only. Probe & report.">02F21·02F22·02H22·0210S</span>
-      </nav>
-    </div>
+<!-- ══════════════ ICON SPRITE ══════════════ -->
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12h3l2.5-8 4 16 3.5-12 2.5 6 1.5-2h3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h6M15 8h6M3 16h6M15 16h6"/><circle cx="12" cy="8" r="2.4"/><circle cx="12" cy="16" r="2.4"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="4" width="7" height="6" rx="1"/><rect x="3" y="14" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/></symbol>
+    <symbol id="i-fw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+    <symbol id="i-log" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 10h11M4 14h16M4 18h8"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4 4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 1 1 3.4 2.5c-.6.2-.9.8-.9 1.4v.4"/><circle cx="12" cy="17" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-dl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></symbol>
+    <symbol id="i-ul" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0 4 4m-4-4L8 7M4 19h16"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h11a5 5 0 0 1 0 10h-6"/><path d="m8 5-4 4 4 4"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 9H9a5 5 0 0 0 0 10h6"/><path d="m16 5 4 4-4 4"/></symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.2"/></symbol>
+  </defs>
+</svg>
 
-    <div class="appbar-actions">
-      <span id="queue-badge" class="queue-badge" style="display:none"></span>
-      <span id="device-name" class="device-pill">No device</span>
-      <button id="btn-connect" class="btn btn-primary">Connect USB</button>
-      <button id="btn-disconnect" class="btn btn-ghost" disabled>Disconnect</button>
+<!-- ══════════════ TOP BAR ══════════════ -->
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" aria-hidden="true"><use href="#i-wave"/></svg>
+    <div class="brand-text">
+      <b>KT<span>LAB</span></b>
+      <small>KTMicro DSP Console</small>
     </div>
-  </header>
-
-  <!-- ══════════════ STATUS STRIP ══════════════ -->
-  <div id="status-bar" class="status-bar status-idle" role="status" aria-live="polite">
-    <span class="status-dot" aria-hidden="true"></span>
-    <span id="status-text">Not connected — click Connect USB to begin.</span>
   </div>
 
-  <!-- ══════════════ WORKSPACE ══════════════ -->
-  <main class="layout">
+  <div class="topbar-mid">
+    <span id="device-name" class="pill pill-idle">No device</span>
+    <span id="queue-badge" class="pill pill-queue" hidden></span>
+  </div>
 
-    <!-- 01 · RESPONSE GRAPH -->
-    <section class="card area-viz">
-      <div class="card-title"><span class="idx">01</span>Frequency Response<span class="title-note">log 20 Hz – 20 kHz · −12…+12 dB</span></div>
-      <canvas id="eq-canvas" class="eq-canvas" aria-label="Frequency response graph" role="img"></canvas>
+  <div class="topbar-actions">
+    <button id="btn-palette" class="btn btn-ghost btn-sm" title="Command palette (Ctrl+K)">
+      <svg class="ico"><use href="#i-search"/></svg><span class="hide-sm">Commands</span><kbd class="hide-sm">Ctrl K</kbd>
+    </button>
+    <button id="btn-settings" class="btn btn-ghost btn-sm btn-icon" title="Settings" aria-label="Settings">
+      <svg class="ico"><use href="#i-sliders"/></svg>
+    </button>
+    <button id="btn-help" class="btn btn-ghost btn-sm btn-icon" title="Shortcuts &amp; help (?)" aria-label="Help">
+      <svg class="ico"><use href="#i-help"/></svg>
+    </button>
+    <span class="vr"></span>
+    <button id="btn-connect" class="btn btn-primary">Connect USB</button>
+    <button id="btn-disconnect" class="btn btn-ghost" disabled>Disconnect</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <!-- ══════════════ NAV RAIL ══════════════ -->
+  <nav class="rail" aria-label="Sections">
+    <div class="rail-head"><span class="rail-title">Sections</span></div>
+    <div class="rail-nav">
+      <button class="rail-btn is-active" data-view="eq"    title="Parametric EQ  (1)"  aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-wave"/></svg><span>EQ</span></button>
+      <button class="rail-btn" data-view="chain" title="Gain structure &amp; dynamics  (2)"><svg class="ico" aria-hidden="true"><use href="#i-chain"/></svg><span>Chain</span></button>
+      <button class="rail-btn" data-view="device" title="Device identity &amp; chip prober  (3)"><svg class="ico" aria-hidden="true"><use href="#i-chip"/></svg><span>Device</span></button>
+      <button class="rail-btn" data-view="regs"  title="Register explorer  (4)"><svg class="ico" aria-hidden="true"><use href="#i-grid"/></svg><span>Registers</span></button>
+      <button class="rail-btn" data-view="fw"    title="Firmware &amp; bootloader  (5)"><svg class="ico" aria-hidden="true"><use href="#i-fw"/></svg><span>Firmware</span></button>
+      <button class="rail-btn" data-view="log"   title="USB log  (6)"><svg class="ico" aria-hidden="true"><use href="#i-log"/></svg><span>Log</span><em id="rail-log-badge" class="rail-badge" hidden>0</em></button>
+    </div>
+    <span class="rail-spacer"></span>
+    <div class="rail-foot">
+      <button id="rail-theme" class="rail-btn rail-btn-mini" title="Cycle theme"><svg class="ico" aria-hidden="true"><use href="#i-sun"/></svg><span class="hide-sm" id="rail-theme-name">Auto</span></button>
+    </div>
+  </nav>
+
+  <!-- ══════════════ STAGE ══════════════ -->
+  <main class="stage" id="stage">
+
+    <!-- ─────────── 01 · EQ ─────────── -->
+    <section class="view is-active" id="view-eq" data-title="Parametric EQ">
+
+      <div class="panel panel-graph">
+        <div class="panel-head">
+          <h2>Frequency response</h2>
+          <div class="headroom" id="eq-headroom" data-state="ok"
+               title="Largest summed boost across the audible band. Above 0 dB the EQ can push a full-scale input past the DAC's limit and clip.">
+            <span class="headroom-dot" aria-hidden="true"></span>
+            <span class="headroom-val mono" id="eq-headroom-val" aria-live="polite">+0.0 dB</span>
+            <span class="headroom-note" id="eq-headroom-note">peak</span>
+            <button class="btn btn-ghost btn-sm" id="btn-eq-trim" disabled
+                    title="Trim the global gain so the peak sits under 0 dBFS">trim</button>
+          </div>
+          <div class="panel-tools">
+            <label class="mini-field" title="Vertical dB range of the plot">
+              <span>range</span>
+              <select id="sel-graph-db">
+                <option value="6">±6 dB</option>
+                <option value="10">±10 dB</option>
+                <option value="14" selected>±14 dB</option>
+                <option value="20">±20 dB</option>
+              </select>
+            </label>
+            <label class="mini-check" title="Dim non-soloed bands on the curve">
+              <input type="checkbox" id="chk-graph-focus" /><span>focus</span>
+            </label>
+            <label class="mini-check" title="Show a filled area under the response">
+              <input type="checkbox" id="chk-graph-fill" checked /><span>fill</span>
+            </label>
+            <button id="btn-graph-target" class="btn btn-ghost btn-sm" title="Clear the AutoEQ target overlay" disabled>target</button>
+            <span class="sep"></span>
+            <button id="btn-eq-on"  class="seg" disabled>EQ ON</button>
+            <button id="btn-eq-off" class="seg" disabled>EQ OFF</button>
+            <span class="eq-switch" id="bank-toggle" hidden>
+              <button id="btn-bank-dac" class="seg" disabled>DAC</button>
+              <button id="btn-bank-adc" class="seg" disabled>ADC</button>
+            </span>
+          </div>
+        </div>
+
+        <div class="graph-wrap">
+          <canvas id="eq-canvas" role="img" aria-label="Parametric EQ frequency response. Drag band handles to change frequency and gain."></canvas>
+          <div id="graph-readout" class="graph-readout" hidden></div>
+          <div class="graph-hint">drag handle · <kbd>shift</kbd> freq only · <kbd>alt</kbd> gain only · <kbd>alt</kbd>+click remove</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2 id="eq-section-title">Parametric EQ — DAC bank</h2>
+          <div class="panel-tools">
+            <button id="btn-autosend" class="toggle" aria-pressed="false" title="Write each band to the device as you drag (150 ms debounce)">Auto-send</button>
+            <span class="sep"></span>
+            <button id="btn-undo" class="btn btn-ghost btn-sm" title="Undo (Ctrl+Z)"><svg class="ico"><use href="#i-undo"/></svg>Undo</button>
+            <button id="btn-redo" class="btn btn-ghost btn-sm" title="Redo (Ctrl+Shift+Z)"><svg class="ico"><use href="#i-redo"/></svg>Redo</button>
+            <button id="btn-read-all"  class="btn btn-secondary btn-sm" title="Read all bands from the device (R)"><svg class="ico"><use href="#i-dl"/></svg>Read</button>
+            <button id="btn-write-all" class="btn btn-primary btn-sm"   title="Write all bands to the device (W)"><svg class="ico"><use href="#i-ul"/></svg>Write all</button>
+            <button id="btn-save-flash" class="btn btn-accent btn-sm" hidden title="Vendor SAVE (0x53) — commit DSP state to flash. The device reboots.">Save to flash</button>
+            <button id="btn-reset-eq" class="btn btn-ghost btn-sm" title="Zero all gains locally (profile default frequencies)">Reset</button>
+          </div>
+          <p class="write-trust" id="write-trust" data-tier="guess"></p>
+        </div>
+        <div id="eq-bands" class="band-grid"></div>
+      </div>
+
+      <div class="split">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Snapshots</h2>
+            <div class="panel-tools">
+              <button id="btn-snap-capture" class="btn btn-ghost btn-sm" title="Store the current banks into the next free slot">Capture</button>
+              <button id="btn-snap-clear" class="btn btn-ghost btn-sm" title="Clear all slots">Clear all</button>
+            </div>
+          </div>
+          <p class="hint">Four in-memory A/B slots. Capture, tweak, then click a slot to jump back instantly — useful for comparing two curves on-device. Slots also overlay on the graph.</p>
+          <div id="snap-list" class="snap-grid"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Presets</h2>
+            <div class="panel-tools">
+              <button id="btn-import" class="btn btn-ghost btn-sm" title="Import a preset JSON or an AutoEQ parametric file">Import</button>
+              <button id="btn-export" class="btn btn-ghost btn-sm" title="Export every stored preset">Export</button>
+              <input type="file" id="file-import" accept=".json" hidden />
+            </div>
+          </div>
+          <div class="row">
+            <input type="text" id="preset-search" class="input grow" placeholder="Filter presets…" autocomplete="off" />
+            <input type="text" id="preset-name" class="input" placeholder="New preset name" maxlength="40" autocomplete="off" />
+            <button id="btn-save-preset" class="btn btn-secondary" title="Store current state (Ctrl+S)">Save</button>
+          </div>
+          <div id="preset-list" class="preset-grid"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>AutoEQ</h2>
+            <div class="panel-tools">
+              <button id="btn-autoeq" class="btn btn-secondary btn-sm">Import target…</button>
+              <input type="file" id="file-autoeq" accept=".json" hidden />
+            </div>
+          </div>
+          <p class="hint">Drop an AutoEQ parametric export (<code>filters</code> plus its <code>target</code> curve) anywhere on the page. The target draws as a dashed line on the graph, and the fit error is measured against it.</p>
+          <div id="autoeq-report" class="out-block short"><p class="empty">No AutoEQ target loaded.</p></div>
+        </div>
+      </div>
     </section>
 
-    <!-- 02 · PARAMETRIC EQ -->
-    <section class="card area-eq">
-      <div class="card-title">
-        <span class="idx">02</span>
-        <span id="eq-section-title">Parametric EQ — DAC bank</span>
-        <span class="eq-switch" id="eq-switch">
-          <button id="btn-eq-on"  class="toggle-btn active" disabled>EQ&nbsp;ON</button>
-          <button id="btn-eq-off" class="toggle-btn" disabled>EQ&nbsp;OFF</button>
-        </span>
-        <span class="eq-switch" id="bank-toggle" style="display:none"
-              title="KT0231H has two independent 6-band banks: DAC (0x34/0x35–0x40) and ADC (0x41/0x42–0x4D)">
-          <button id="btn-bank-dac" class="toggle-btn active" disabled>DAC&nbsp;BANK</button>
-          <button id="btn-bank-adc" class="toggle-btn" disabled>ADC&nbsp;BANK</button>
-        </span>
+    <!-- ─────────── 02 · CHAIN ─────────── -->
+    <section class="view" id="view-chain" data-title="Gain &amp; dynamics">
+
+      <div class="split">
+        <div class="panel">
+          <div class="panel-head"><h2>Analog PGA</h2>
+            <div class="panel-tools"><span class="tag">0x3A / 0x3B</span></div>
+          </div>
+          <p class="hint">Analog input/output gain, selected by index. Semantics are vendor-confirmed on KT0211L / KT02H20 and read best-effort elsewhere — the KT0231H map puts its EQ table at these addresses.</p>
+          <div class="field">
+            <label for="pga-adc">A_ADC PGA <span class="tag">input</span></label>
+            <select id="pga-adc" class="input mono" disabled></select>
+          </div>
+          <div class="field">
+            <label for="pga-dac">A_DAC PGA <span class="tag">output</span></label>
+            <select id="pga-dac" class="input mono" disabled></select>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Digital gain</h2>
+            <div class="panel-tools"><span class="tag">0x65 / 0x66 · 0.5 dB steps</span></div>
+          </div>
+          <p class="hint">Signed byte, 0.5 dB per step. On stereo models register <code>0x66</code> holds DACL in byte0 and DACR in byte1; single-DAC parts ignore byte1.</p>
+          <div class="field">
+            <label for="global-gain">DIG_DAC left <span class="out" id="global-gain-val">0.0 dB</span></label>
+            <input type="range" id="global-gain" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
+          </div>
+          <div class="field">
+            <label for="dig-dac-r">DIG_DAC right <span class="out" id="dig-dac-r-val">0.0 dB</span></label>
+            <input type="range" id="dig-dac-r" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
+          </div>
+          <div class="field">
+            <label for="dig-adc">DIG_ADC <span class="out" id="dig-adc-val">+0.0 dB</span></label>
+            <input type="range" id="dig-adc" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
+          </div>
+          <div class="row row-end">
+            <button id="btn-gain-reset" class="btn btn-ghost btn-sm">Zero all gains</button>
+          </div>
+        </div>
       </div>
 
-      <div id="eq-bands" class="eq-bands"></div>
+      <div class="split">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Noise gate</h2>
+            <div class="panel-tools">
+              <span class="tag">0x71–0x73</span>
+              <button id="btn-ng-read"  class="btn btn-ghost btn-sm" disabled>Read</button>
+              <button id="btn-ng-apply" class="btn btn-secondary btn-sm" disabled>Apply</button>
+            </div>
+          </div>
+          <p class="hint">Thresholds encode as <code>byte = 256 + dB</code>, so −60 dB is <code>0xC4</code> and −96 dB is <code>0xA0</code>. The formula saturates one step below 0 dB, so the usable range stops at −1 dB (0xFF). Hold is fixed at 10 ms. Register layout decoded from the vendor desktop app on KT02H20.</p>
+          <div class="field field-inline">
+            <label for="ng-th">Enable</label>
+            <div class="eq-switch"><button id="ng-en" class="seg" disabled>EN</button></div>
+          </div>
+          <div class="field">
+            <label for="ng-th">Threshold <span class="out" id="ng-th-val">-60 dB</span></label>
+            <input type="range" id="ng-th" class="slider" min="-96" max="0" step="1" value="-60" disabled />
+          </div>
+          <div class="field">
+            <label for="ng-gv">Gate volume <span class="out" id="ng-gv-val">-24 dB</span></label>
+            <input type="range" id="ng-gv" class="slider" min="-96" max="0" step="1" value="-24" disabled />
+          </div>
+          <div class="row">
+            <label class="mini-field"><span>attack ms</span><input type="number" id="ng-at" class="input mono num" min="0" max="65535" value="20" /></label>
+            <label class="mini-field"><span>release ms</span><input type="number" id="ng-rt" class="input mono num" min="0" max="65535" value="200" /></label>
+          </div>
+        </div>
 
-      <div class="eq-actions">
-        <button id="btn-read-all"   class="btn btn-secondary" disabled title="Shortcut: R">Read from Device</button>
-        <button id="btn-write-all"  class="btn btn-primary"   disabled title="Shortcut: W">Write All Bands</button>
-        <button id="btn-save-flash" class="btn btn-accent"    disabled style="display:none"
-                title="Vendor SAVE command (0x53): commit DSP state to flash. Device reboots. KT0211L / KT02H20 / KT0210 only.">Save to Flash</button>
-        <button id="btn-reset-eq"   class="btn btn-ghost"    disabled>Reset EQ (0 dB)</button>
-        <button id="btn-mempeek"    class="btn btn-ghost"    disabled
-                title="Read-only 0x08 word peek (16 words from a hex address). Cannot modify the device.">Peek Memory</button>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Limiter</h2>
+            <div class="panel-tools">
+              <span class="tag">0x78–0x79</span>
+              <button id="btn-lim-read"  class="btn btn-ghost btn-sm" disabled>Read</button>
+              <button id="btn-lim-apply" class="btn btn-secondary btn-sm" disabled>Apply</button>
+            </div>
+          </div>
+          <p class="hint">Register <code>0x78</code> carries EN in bit7 and SOFT in bit6; bit16+ holds the threshold byte. SOFT is the vendor app's soft-knee mode.</p>
+          <div class="field field-inline">
+            <label>Modes</label>
+            <div class="eq-switch">
+              <button id="lim-en"   class="seg" disabled>EN</button>
+              <button id="lim-soft" class="seg" disabled>SOFT</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="lim-th">Threshold <span class="out" id="lim-th-val">-12 dB</span></label>
+            <input type="range" id="lim-th" class="slider" min="-96" max="0" step="1" value="-12" disabled />
+          </div>
+          <div class="row">
+            <label class="mini-field"><span>attack ms</span><input type="number" id="lim-at" class="input mono num" min="0" max="65535" value="5" /></label>
+            <label class="mini-field"><span>release ms</span><input type="number" id="lim-rt" class="input mono num" min="0" max="65535" value="100" /></label>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- ═══════ SIDEBAR ═══════ -->
-    <aside class="area-side">
+    <!-- ─────────── 03 · DEVICE ─────────── -->
+    <section class="view" id="view-device" data-title="Device identity">
 
-      <!-- 03 · GAIN STRUCTURE -->
-      <section class="card">
-        <div class="card-title"><span class="idx">03</span>Gain Structure</div>
-
-        <div class="control-row">
-          <label class="control-label" title="Register 0x3A — analog ADC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): index into {0,−6,8,14,20,26,32,44 dB}">A_ADC PGA</label>
-          <select id="pga-adc" class="volume-select" disabled></select>
-        </div>
-
-        <div class="control-row">
-          <label class="control-label" title="Register 0x3B — analog DAC PGA gain. Vendor-confirmed semantics (KT0211L/KT02H20): 0=mute, idx 1..15 → 1.5·(idx−1)−18 dB">A_DAC PGA</label>
-          <select id="pga-dac" class="volume-select" disabled></select>
+      <div class="split">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Fingerprint &amp; chip prober</h2>
+            <div class="panel-tools">
+              <button id="btn-id-read" class="btn btn-secondary btn-sm" disabled>Read &amp; probe</button>
+            </div>
+          </div>
+          <p class="hint">A read-only census of the device: version, build, USB strings, flags, magic, and a band-register layout discriminator that names the chip class even when the OEM product string has been renamed. See <code>PROTOCOL.md</code> §10.</p>
+          <pre id="dev-id" class="out-block">Not read yet — connect, then Read &amp; probe.</pre>
         </div>
 
-        <div class="control-row">
-          <label class="control-label" title="Register 0x65 byte0 — digital ADC gain, signed 0.5 dB steps (vendor-confirmed on KT0211L/KT02H20)">
-            DIG_ADC <span class="value-badge" id="dig-adc-val">+0.0 dB</span>
-          </label>
-          <input type="range" id="dig-adc" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
+        <div class="panel">
+          <div class="panel-head"><h2>Profile override</h2></div>
+          <p class="hint">The app picks a profile from the product string first, then VID:PID. Override it here when a renamed dongle or a roster-only part needs a different register map.</p>
+          <div class="row">
+            <select id="sel-profile" class="input grow mono"></select>
+            <button id="btn-apply-profile" class="btn btn-secondary" disabled>Apply profile</button>
+          </div>
+          <p class="hint" id="profile-note"></p>
         </div>
-
-        <div class="control-row">
-          <label class="control-label" title="Register 0x66 byte0 — digital DAC gain, signed 0.5 dB steps (stereo models: byte0=DACL, byte1=DACR)">
-            DIG_DAC Preamp <span class="value-badge" id="global-gain-val">0.0 dB</span>
-          </label>
-          <input type="range" id="global-gain" class="slider" min="-64" max="63.5" step="0.5" value="0" disabled />
-        </div>
-      </section>
-
-      <!-- 04 · PRESETS -->
-      <section class="card">
-        <div class="card-title">
-          <span class="idx">04</span>Local Presets
-          <span class="title-actions">
-            <button id="btn-export" class="btn btn-ghost btn-sm" disabled>Export</button>
-            <button id="btn-import" class="btn btn-ghost btn-sm" disabled>Import</button>
-            <input type="file" id="file-import" accept=".json" style="display:none" />
-          </span>
-        </div>
-        <div class="preset-row">
-          <input type="text" id="preset-name" class="preset-input"
-                 placeholder="Preset name… (Ctrl+S)" maxlength="40" />
-          <button id="btn-save-preset" class="btn btn-secondary" disabled>Save</button>
-        </div>
-        <div id="preset-list" class="preset-list"></div>
-      </section>
-
-      <!-- 05 · DEVICE ID & CHIP PROBER -->
-      <section class="card">
-        <div class="card-title"><span class="idx">05</span>Device ID &amp; Chip Prober<span class="title-note">read-only fingerprint</span></div>
-        <div class="eq-actions">
-          <button id="btn-id-read" class="btn btn-secondary btn-sm" disabled>Read &amp; Probe</button>
-          <button id="btn-apply-profile" class="btn btn-secondary btn-sm" disabled>Apply Profile ▸</button>
-          <select id="sel-profile" class="volume-select" style="min-width:132px"></select>
-        </div>
-        <div id="dev-id" class="mono-note">Not read yet — connect, then Read &amp; Probe. Unknown chips get classified by their register layout (see PROTOCOL.md §10).</div>
-      </section>
-
-      <!-- 06 · USB IDENTITY (RENAME) -->
-      <section class="card card-dashed">
-        <div class="card-title"><span class="idx">06</span>USB Identity<span class="title-note">rename · 0x40–0x5B</span></div>
-        <p class="hint-text">Edits the USB string descriptors the host displays (run-mode RAM; persist with Save to Flash where supported). VID/PID changes re-enumerate the device — note the old values first.</p>
-        <div class="control-row"><label class="control-label">Manufacturer</label><input id="usb-mfr" class="preset-input" maxlength="8" placeholder="8 chars max" /></div>
-        <div class="control-row"><label class="control-label">Product</label><input id="usb-prod" class="preset-input" maxlength="8" placeholder="8 chars max" /></div>
-        <div class="control-row"><label class="control-label">Serial</label><input id="usb-serial" class="preset-input" maxlength="7" placeholder="7 chars max" /></div>
-        <div class="control-row"><label class="control-label">VID : PID</label>
-          <input id="usb-vid" class="preset-input mono-note" style="max-width:84px;padding:7px 8px" maxlength="4" placeholder="31B2" />
-          <input id="usb-pid" class="preset-input mono-note" style="max-width:84px;padding:7px 8px" maxlength="4" placeholder="0111" />
-        </div>
-        <div class="eq-actions">
-          <button id="btn-id-refresh" class="btn btn-ghost btn-sm" disabled>Read current</button>
-          <button id="btn-id-write-str" class="btn btn-secondary btn-sm" disabled>Write strings</button>
-          <button id="btn-id-write-vpid" class="btn btn-danger btn-sm" disabled>Write VID/PID</button>
-        </div>
-      </section>
-
-      <!-- 07 · DRC -->
-      <section class="card">
-        <div class="card-title"><span class="idx">07</span>DRC — Gate &amp; Limiter<span class="title-note">0x71–0x73 · 0x78–0x79</span></div>
-        <p class="hint-text">Vendor-app-verified semantics (KT02H20). Thresholds encode as byte = 256 + dB (dB ≤ 0). Gate flags 0x3C, hold 10 ms fixed.</p>
-        <div class="control-row">
-          <label class="control-label">Noise Gate
-            <span class="eq-switch"><button id="ng-en" class="toggle-btn" disabled>EN</button></span>
-          </label>
-          <input type="range" id="ng-th" class="slider" min="-96" max="0" step="1" value="-60" disabled />
-          <span class="value-badge" id="ng-th-val">-60 dB</span>
-        </div>
-        <div class="control-row">
-          <label class="control-label">Gate volume</label>
-          <input type="range" id="ng-gv" class="slider" min="-96" max="0" step="1" value="-24" disabled />
-          <span class="value-badge" id="ng-gv-val">-24 dB</span>
-        </div>
-        <div class="control-row">
-          <label class="control-label">NG AT / RT ms</label>
-          <input type="number" id="ng-at" class="preset-input" style="max-width:92px" value="20" />
-          <input type="number" id="ng-rt" class="preset-input" style="max-width:92px" value="200" />
-        </div>
-        <div class="eq-actions"><button id="btn-ng-apply" class="btn btn-secondary btn-sm" disabled>Apply Noise Gate</button></div>
-        <div class="control-row" style="margin-top:14px">
-          <label class="control-label">Limiter
-            <span class="eq-switch"><button id="lim-en" class="toggle-btn" disabled>EN</button><button id="lim-soft" class="toggle-btn" disabled>SOFT</button></span>
-          </label>
-          <input type="range" id="lim-th" class="slider" min="-96" max="0" step="1" value="-12" disabled />
-          <span class="value-badge" id="lim-th-val">-12 dB</span>
-        </div>
-        <div class="control-row">
-          <label class="control-label">LIM AT / RT ms</label>
-          <input type="number" id="lim-at" class="preset-input" style="max-width:92px" value="5" />
-          <input type="number" id="lim-rt" class="preset-input" style="max-width:92px" value="100" />
-        </div>
-        <div class="eq-actions"><button id="btn-lim-apply" class="btn btn-secondary btn-sm" disabled>Apply Limiter</button></div>
-      </section>
-
-      <!-- 08 · REGISTER EXPLORER -->
-      <section class="card card-dashed">
-        <div class="card-title"><span class="idx">08</span>Register Explorer<span class="title-note">0x00–0xFF · 0x08 extended</span></div>
-        <div class="eq-actions">
-          <button id="btn-reg-dump" class="btn btn-secondary btn-sm" disabled>Dump 0x00–0xFF</button>
-          <button id="btn-reg-export-json" class="btn btn-ghost btn-sm">JSON</button>
-          <button id="btn-reg-export-csv" class="btn btn-ghost btn-sm">CSV</button>
-        </div>
-        <div id="reg-dump" class="log-box" style="height:130px">— no dump yet —</div>
-        <div class="eq-actions" style="margin-top:10px">
-          <input id="ext-addr" class="preset-input mono-note" style="max-width:120px;padding:7px 8px" value="80000" placeholder="start hex" />
-          <input id="ext-count" class="preset-input mono-note" style="max-width:80px;padding:7px 8px" value="64" placeholder="words" />
-          <button id="btn-ext-dump" class="btn btn-secondary btn-sm" disabled>0x08 Dump</button>
-          <button id="btn-ext-export" class="btn btn-ghost btn-sm">Export .bin</button>
-        </div>
-        <p class="hint-text">0x08 reads the extended/RAM space — returns zeros on most runtimes and is <b>not</b> a flash dump (PROTOCOL.md §9.1). For a true backup see <code>HARDWARE-DUMP.md</code>.</p>
-        <div id="ext-dump" class="log-box" style="height:100px">— no dump yet —</div>
-      </section>
-
-      <!-- 09 · FIRMWARE TOOLS (restored v7 panels) -->
-      <section class="card card-dashed">
-        <div class="card-title"><span class="idx">09</span>Firmware BIN Patcher<span class="title-note">offline image surgery</span></div>
-        <p class="hint-text">Load a KT factory image, inspect the embedded EQ tables, patch them with the current bands, export a flashable BIN. Flash with the Boot panel below or the vendor <code>KT_BOOT_TOOL</code>.</p>
-        <div class="eq-actions">
-          <button id="btn-fw-load" class="btn btn-secondary btn-sm">Load .bin</button>
-          <button id="btn-fw-patch" class="btn btn-secondary btn-sm" disabled>Patch tables</button>
-          <button id="btn-fw-export" class="btn btn-secondary btn-sm" disabled>Export .bin</button>
-          <input type="file" id="file-fw" accept=".bin" style="display:none" />
-        </div>
-        <div id="fw-info" class="mono-note">No image loaded.</div>
-      </section>
-
-      <!-- 10 · BOOT MODE -->
-      <section class="card card-dashed">
-        <div class="card-title"><span class="idx">10</span>Boot-mode Flasher<span class="title-note">PID 31B2:0001/0101</span></div>
-        <p class="hint-text">Connect the dongle in bootloader mode (vendor boot PID <code>31B2:0001</code>) and write its <strong>own backed-up, patched</strong> image. Never flash a foreign BIN. Type <code>FLASH</code> to arm the write.</p>
-        <div class="eq-actions">
-          <button id="btn-boot-connect"    class="btn btn-secondary btn-sm">Boot Connect</button>
-          <button id="btn-boot-disconnect" class="btn btn-ghost btn-sm" disabled>Disconnect</button>
-          <button id="btn-boot-info"       class="btn btn-ghost btn-sm">Info</button>
-        </div>
-        <div class="boot-confirm-row">
-          <input type="text" id="boot-confirm" class="preset-input" placeholder="type FLASH to arm" spellcheck="false" />
-        </div>
-        <button id="btn-boot-flash" class="btn btn-danger btn-wide" disabled>Flash Patched Image</button>
-        <div id="boot-progress" class="boot-progress" style="display:none">
-          <div id="boot-bar" class="boot-bar"></div>
-        </div>
-        <div id="boot-info" class="mono-note">Bootloader not connected.</div>
-      </section>
-
-    </aside>
-
-    <!-- 11 · USB LOG -->
-    <section class="card area-log">
-      <div class="card-title">
-        <span class="idx">11</span>USB Log
-        <span class="title-actions">
-          <button id="btn-clear-log" class="btn btn-ghost btn-sm" title="Shortcut: Esc">Clear</button>
-        </span>
       </div>
-      <div id="log" class="log-box"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Chip identification</h2>
+          <span class="tag" id="chip-count"></span>
+        </div>
+        <p class="hint">Matched against the vendor's own product catalogue — <span class="mono" id="chip-total">0</span> parts — so a device can be named even when no register map has been verified for it. Naming the part and knowing its register layout are separate questions, and this panel keeps them separate.</p>
+        <p class="chip-ident mono" id="chip-ident" aria-live="polite">Connect a device to identify it.</p>
+        <div class="row wrap" id="chip-classes"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>USB identity</h2>
+          <div class="panel-tools">
+            <span class="tag">0x40–0x5B</span>
+            <button id="btn-id-refresh"      class="btn btn-ghost btn-sm" disabled>Read current</button>
+            <button id="btn-id-write-str"   class="btn btn-secondary btn-sm" disabled>Write strings</button>
+            <button id="btn-id-write-vpid"  class="btn btn-danger btn-sm" disabled>Write VID/PID</button>
+          </div>
+        </div>
+        <p class="hint">These edit the USB string descriptors the host shows. They live in run-mode RAM — replug to see them, and use <em>Save to flash</em> where the chip supports persistence. A VID/PID change re-enumerates the device, so record the current pair first.</p>
+        <div class="grid-4">
+          <div class="field"><label for="usb-mfr">Manufacturer</label><input id="usb-mfr" class="input mono" maxlength="8" placeholder="8 chars max" /></div>
+          <div class="field"><label for="usb-prod">Product</label><input id="usb-prod" class="input mono" maxlength="8" placeholder="8 chars max" /></div>
+          <div class="field"><label for="usb-serial">Serial</label><input id="usb-serial" class="input mono" maxlength="7" placeholder="7 chars max" /></div>
+          <div class="field"><label>VID : PID</label>
+            <div class="row row-tight">
+              <input id="usb-vid" class="input mono grow" maxlength="4" placeholder="31B2" />
+              <input id="usb-pid" class="input mono grow" maxlength="4" placeholder="0111" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Memory peek</h2>
+            <div class="panel-tools"><span class="tag">0x08 · read-only</span></div>
+          </div>
+          <p class="hint">The <code>0x08</code> word reader answers from an extended space that most runtimes map to zeros. It <b>cannot</b> read flash, and it cannot modify the device. For a real backup see <code>HARDWARE-DUMP.md</code>.</p>
+          <div class="row">
+            <input id="mem-addr" class="input mono grow" value="00026" spellcheck="false" aria-label="start address (hex)" />
+            <button id="btn-mempeek" class="btn btn-secondary" disabled>Peek 16 words</button>
+          </div>
+          <pre id="mem-out" class="out-block">—</pre>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Vendor chip roster</h2>
+            <div class="panel-tools">
+              <button id="btn-copy-roster" class="btn btn-ghost btn-sm">Copy as JSON</button>
+            </div>
+          </div>
+          <p class="hint">Roster strings recovered from <code>KT_BOOT_TOOL</code> 1.0.58. Profiled parts have a run-mode register map in the app; the rest are documented-only or belong to a different platform (<code>ARCHITECTURE.md</code> §4).</p>
+          <div id="chip-roster" class="roster"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── 04 · REGISTERS ─────────── -->
+    <section class="view" id="view-regs" data-title="Register explorer">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Register space <span class="tag">0x00–0xFF</span></h2>
+          <div class="panel-tools">
+            <input id="reg-search" class="input input-sm mono" placeholder="filter by value or label…" spellcheck="false" />
+            <button id="chk-reg-diff" class="toggle" aria-pressed="false" title="Highlight registers whose value changed since the previous dump">Diff</button>
+            <button id="btn-reg-dump" class="btn btn-secondary btn-sm" disabled>Dump 256</button>
+            <button id="btn-reg-export-json" class="btn btn-ghost btn-sm">JSON</button>
+            <button id="btn-reg-export-csv"  class="btn btn-ghost btn-sm">CSV</button>
+          </div>
+        </div>
+        <p class="hint" id="reg-stats">A full sweep is 256 round-trips at the queue cadence — expect it to take a while. Annotated addresses come from the reverse-engineered map; unknown ones are listed bare.</p>
+        <div id="reg-dump" class="out-block tall">— no dump yet —</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Extended space <span class="tag">0x08</span></h2>
+          <div class="panel-tools">
+            <input id="ext-addr"  class="input input-sm mono num" value="80000" aria-label="start address (hex)" />
+            <input id="ext-count" class="input input-sm mono num" value="64"  aria-label="word count" />
+            <button id="btn-ext-dump"   class="btn btn-secondary btn-sm" disabled>Dump</button>
+            <button id="btn-ext-export" class="btn btn-ghost btn-sm">Export .bin</button>
+          </div>
+        </div>
+        <p class="hint">Two address regimes are known; most runtimes return zeros. Results are exported little-endian. This is <b>not</b> a flash dump (<code>PROTOCOL.md</code> §9.1).</p>
+        <div id="ext-dump" class="out-block short">— no dump yet —</div>
+      </div>
+    </section>
+
+    <!-- ─────────── 05 · FIRMWARE ─────────── -->
+    <section class="view" id="view-fw" data-title="Firmware &amp; bootloader">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Firmware image surgery</h2>
+          <div class="panel-tools">
+            <button id="btn-fw-load"   class="btn btn-secondary btn-sm"><svg class="ico"><use href="#i-dl"/></svg>Load .bin</button>
+            <button id="btn-fw-patch"  class="btn btn-secondary btn-sm" disabled>Patch tables</button>
+            <button id="btn-fw-export" class="btn btn-secondary btn-sm" disabled>Export .bin</button>
+            <input type="file" id="file-fw" accept=".bin" hidden />
+          </div>
+        </div>
+        <p class="hint">The vendor persistence path when a chip has no working SAVE command: take the unit's <b>own</b> image, rewrite the embedded EQ tables with the current bands, and flash it back. The EQ table is located by pattern, not by a hardcoded offset.</p>
+        <div id="fw-info" class="out-block">No image loaded.</div>
+        <div id="fw-preflight" class="preflight" hidden></div>
+        <div id="fw-tables" class="fw-tables" hidden></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Compare two images</h2>
+          <div class="panel-tools">
+            <button id="btn-fw-cmp-load" class="btn btn-secondary btn-sm" disabled><svg class="ico"><use href="#i-dl"/></svg>Load second .bin</button>
+            <button id="btn-fw-cmp-clear" class="btn btn-ghost btn-sm" disabled>Clear</button>
+            <input type="file" id="file-fw2" accept=".bin" hidden />
+          </div>
+        </div>
+        <p class="hint">Which of two builds is which. Differences are grouped by what the bytes <em>mean</em> — a build-number edit and a re-tuned EQ are both "a few bytes changed" but call for opposite conclusions — so the verdict distinguishes them. This is how a re-badged firmware is told apart from a genuinely different one.</p>
+        <div id="fw-cmp" class="out-block">Load a first image to use as the reference.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Bootloader flasher</h2>
+          <div class="panel-tools">
+            <div class="seg-group" role="radiogroup" aria-label="Bootloader transport">
+              <button id="boot-tr-hid" class="seg is-on" role="radio" aria-checked="true"  data-transport="hid">WebHID</button>
+              <button id="boot-tr-cdc" class="seg"       role="radio" aria-checked="false" data-transport="cdc">CDC serial</button>
+            </div>
+            <span class="tag" id="boot-tr-tag">31B2:0101 / 0001 / 0002</span>
+            <button id="btn-boot-connect"    class="btn btn-secondary btn-sm">Boot connect</button>
+            <button id="btn-boot-disconnect" class="btn btn-ghost btn-sm" disabled>Disconnect</button>
+            <button id="btn-boot-info"       class="btn btn-ghost btn-sm" disabled>Info</button>
+            <button id="btn-boot-abort"      class="btn btn-ghost btn-sm" hidden>Abort</button>
+          </div>
+        </div>
+        <p class="hint" id="boot-hint">Put the dongle into bootloader mode, connect, and write a patched image <b>you dumped from that same unit</b>. Never flash a foreign BIN. The handshake is <code>KTM → VER → KEY → CHP → CFG → PWO → KSTA</code>, then 512-byte <code>0x69</code> blocks. Typing <code>FLASH</code> arms the write.</p>
+        <div class="row" id="boot-cdc-opts" hidden>
+          <div class="field field-inline">
+            <label for="boot-baud">Baud</label>
+            <select id="boot-baud" class="input">
+              <option>115200</option><option>256000</option><option>576000</option>
+              <option selected>921600</option>
+            </select>
+          </div>
+          <label class="mini-field"><span>flash base</span><input id="boot-base" class="input mono num" value="0x000000" size="10" spellcheck="false" /></label>
+          <label class="mini-field"><span>bank id</span><input id="boot-bank" class="input mono num" value="1" size="3" spellcheck="false" /></label>
+          <p class="hint hint-tight">The unit re-enumerates as a CDC port once it is in boot mode, so connect <b>after</b> it has rebooted. Leave the base at 0 for the stock <code>flag=0</code> images; the flag shifts the target by 32 KB per bit.</p>
+        </div>
+        <div class="row">
+          <input type="text" id="boot-confirm" class="input mono grow flash-arm" placeholder="type FLASH to arm" spellcheck="false" autocomplete="off" />
+          <button id="btn-boot-flash" class="btn btn-danger" disabled>Flash patched image</button>
+        </div>
+        <div id="boot-progress" class="progress" hidden><div id="boot-bar" class="progress-bar"></div></div>
+        <div id="boot-info" class="out-block">Bootloader not connected.</div>
+      </div>
+    </section>
+
+    <!-- ─────────── 06 · LOG ─────────── -->
+    <section class="view" id="view-log" data-title="USB log">
+      <div class="panel panel-fill">
+        <div class="panel-head">
+          <h2>Session log</h2>
+          <div class="panel-tools">
+            <input id="log-search" class="input input-sm mono" placeholder="search…" spellcheck="false" />
+            <span id="log-filters" class="eq-switch"></span>
+            <label class="mini-check"><input type="checkbox" id="chk-log-follow" checked /><span>follow</span></label>
+            <button id="btn-log-export" class="btn btn-ghost btn-sm">Export</button>
+            <button id="btn-clear-log" class="btn btn-ghost btn-sm" title="Esc">Clear</button>
+          </div>
+        </div>
+        <div id="log" class="log-box" role="log" aria-live="off"></div>
+      </div>
     </section>
 
   </main>
+</div>
 
-  <!-- ══════════════ FOOTER ══════════════ -->
-  <footer class="footer">
-    <div class="footer-left">
-      <span class="dev-legend" title="Product-string → profile routing">
-        <b>Routing:</b> <code>CDS… / 0211… / WAN'ER / TANGZU</code> → KT0211L ·
-        <code>KT02H20… / JM12</code> → KT02H20 · <code>TANCHJIM BUNNY</code> → KT0210 ·
-        <code>02F20</code> → KT02F20 · <code>02F21/02F22/02H22/0210S</code> → roster profiles ·
-        <code>0x1132</code> → KT0231H · else DEFAULT (Helios map, probe-gated)
-      </span>
-    </div>
-    <div class="footer-right shortcut-hint">
-      <kbd>R</kbd> Read <kbd>W</kbd> Write <kbd>Ctrl+S</kbd> Preset <kbd>Ctrl+Z</kbd> Undo band <kbd>Esc</kbd> Clear log
-    </div>
-  </footer>
+<!-- ══════════════ STATUS BAR ══════════════ -->
+<footer class="statusbar" id="status-bar" role="status" aria-live="polite">
+  <span class="led" id="status-dot" aria-hidden="true"></span>
+  <span id="status-text">Not connected.</span>
+  <span class="grow"></span>
+  <span class="status-hint" id="status-hint"></span>
+  <span class="vr"></span>
+  <span class="status-meta mono" id="status-meta"></span>
+</footer>
 
-  <div id="toast-root" aria-live="polite" aria-atomic="true"></div>
-  <script src="app.js"></script>
+<!-- ══════════════ OVERLAYS ══════════════ -->
+<div id="palette-root" class="overlay" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="palette-input-wrap">
+      <svg class="ico"><use href="#i-search"/></svg>
+      <input id="palette-input" type="text" placeholder="Run a command or jump to a section…" autocomplete="off" spellcheck="false" />
+      <kbd>Esc</kbd>
+    </div>
+    <div id="palette-list" class="palette-list" role="listbox"></div>
+  </div>
+</div>
+
+<div id="settings-root" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="sheet-head">
+      <h2>Settings</h2>
+      <button class="btn btn-ghost btn-icon" data-close="settings-root" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label for="sel-theme">Theme</label>
+        <select id="sel-theme" class="input">
+          <option value="graphite">Graphite — deep lab dark</option>
+          <option value="oled">OLED — pure black</option>
+          <option value="light">Paper — light</option>
+          <option value="contrast">Contrast — high contrast</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Accent</label>
+        <div id="accent-picker" class="accent-picker"></div>
+      </div>
+      <div class="field">
+        <label for="sel-queue-gap">Register queue gap</label>
+        <select id="sel-queue-gap" class="input mono">
+          <option value="0">0 ms — fastest (risky)</option>
+          <option value="50">50 ms</option>
+          <option value="100" selected>100 ms — proven</option>
+          <option value="200">200 ms — conservative</option>
+          <option value="400">400 ms — very safe</option>
+        </select>
+        <p class="hint">The vendor firmware serialises HID reports; this is the enforced gap between them. 100 ms is what the field notes call proven.</p>
+      </div>
+      <div class="field">
+        <label for="sel-log-level">Log verbosity</label>
+        <select id="sel-log-level" class="input">
+          <option value="inf">Normal — commands and results</option>
+          <option value="dbg">Verbose — every HID byte</option>
+        </select>
+      </div>
+      <div class="field field-check">
+        <label><input type="checkbox" id="chk-autosend" /> <span>Write a band to the device while dragging it</span></label>
+      </div>
+      <div class="field field-check">
+        <label><input type="checkbox" id="chk-confirm-flash" checked /> <span>Require a typed confirmation before any flash write</span></label>
+      </div>
+      <div class="field field-check">
+        <label><input type="checkbox" id="chk-reduce-motion" /> <span>Reduce interface animation</span></label>
+      </div>
+      <div class="field">
+        <label>Presets &amp; data</label>
+        <div class="row">
+          <button id="btn-reset-settings" class="btn btn-ghost btn-sm">Reset settings</button>
+          <button id="btn-clear-presets"  class="btn btn-danger btn-sm">Delete all presets</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="help-root" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Help">
+    <div class="sheet-head">
+      <h2>Shortcuts &amp; notes</h2>
+      <button class="btn btn-ghost btn-icon" data-close="help-root" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body sheet-cols">
+      <div>
+        <h3>Keyboard</h3>
+        <dl class="keys">
+          <dt><kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>command palette</dd>
+          <dt><kbd>1</kbd>…<kbd>6</kbd></dt><dd>switch section</dd>
+          <dt><kbd>R</kbd></dt><dd>read all bands</dd>
+          <dt><kbd>W</kbd></dt><dd>write all bands</dd>
+          <dt><kbd>S</kbd></dt><dd>save to flash (with Ctrl)</dd>
+          <dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt><dd>undo</dd>
+          <dt><kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>Z</kbd></dt><dd>redo</dd>
+          <dt><kbd>Ctrl</kbd><kbd>S</kbd></dt><dd>store preset</dd>
+          <dt><kbd>?</kbd></dt><dd>this panel</dd>
+          <dt><kbd>Esc</kbd></dt><dd>close overlay / clear log</dd>
+        </dl>
+        <h3>Graph</h3>
+        <dl class="keys">
+          <dt>drag</dt><dd>frequency + gain</dd>
+          <dt><kbd>shift</kbd>+drag</dt><dd>frequency only</dd>
+          <dt><kbd>alt</kbd>+drag</dt><dd>gain only</dd>
+          <dt><kbd>alt</kbd>+click</dt><dd>remove that band</dd>
+          <dt><kbd>tab</kbd></dt><dd>focus the next band</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>What is verified, and what is not</h3>
+        <p class="hint">This tool talks to real hardware. The app never invents semantics: every control either comes from a vendor-confirmed register, a published reverse-engineering note, or is labelled best-effort.</p>
+        <ul class="bullets">
+          <li><b>EQ bands</b> — byte-level confirmed on KT0211L, KT02H20, KT0210 and KT0231H.</li>
+          <li><b>Save to flash</b> — vendor <code>0x53</code>, user-verified on KT0211L and KT0210. Deliberately hidden on chips where it is unverified.</li>
+          <li><b>Digital gain</b> — 0.5 dB steps, vendor-confirmed.</li>
+          <li><b>DRC registers</b> — decoded from the vendor desktop app on KT02H20.</li>
+          <li><b>KT0231H PGA</b> — unknown; those addresses hold EQ data on that chip.</li>
+          <li><b>Software firmware dump</b> — proven impossible. The only real backup is hardware (SWD on GPIO4/5, or the UART bootloader on GPIO2/3).</li>
+        </ul>
+        <p class="hint">Drop an AutoEQ parametric JSON or a preset export anywhere on the page to load it. Full protocol notes live in <code>PROTOCOL.md</code>, <code>CHIPS.md</code> and <code>ARCHITECTURE.md</code>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="drop-overlay" class="drop-overlay" hidden><div>Drop a preset, an AutoEQ file, or a firmware <code>.bin</code></div></div>
+<div id="toast-root" aria-live="polite" aria-atomic="false"></div>
+
+<script src="js/chips.js"></script>
+<script src="js/core.js"></script>
+<script src="js/device.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/cdc.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
