@@ -1,0 +1,343 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   KTLAB · tokens.css — the entire theme in one place.
+   ───────────────────────────────────────────────────────────────────────
+   Rule: no raw colour ever appears in app.css or in JS. Everything reads
+   a semantic token. A theme is one block of overrides on <html>.
+
+   Layer order:  theme surfaces → accent → semantic → shape/space/type.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · SHAPE, SPACE, TYPE, MOTION  (theme-independent) ─────────────── */
+:root {
+  --r-xl: 14px;
+  --r-lg: 11px;
+  --r-md: 8px;
+  --r-sm: 6px;
+  --r-pill: 999px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 22px;
+  --sp-6: 30px;
+
+  --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Inter', sans-serif;
+  --mono: 'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --fs-xs: 10.5px;
+  --fs-sm: 11.5px;
+  --fs-md: 12.5px;
+  --fs-lg: 14px;
+  --fs-xl: 17px;
+
+  /* Tracking and leading are per-size properties, not one global value
+     (apple-design §15). Large type wants negative tracking because letters
+     read too far apart as they grow; small type wants slightly positive
+     tracking for legibility. Leading runs the other way — tight on large
+     headings, looser on small information-dense text. A single fixed
+     letter-spacing is wrong at some size on the scale, so each step of the
+     scale owns both values and `syntax.cjs` fails the build if a rule sets a
+     size without its matching tracking. */
+  --tr-xs:  .012em;    /* 10.5px — the more tracking the more it helps here */
+  --tr-sm:  .006em;    /* 11.5px */
+  --tr-md:  0;         /* 12.5px body — neutral */
+  --tr-lg: -.004em;    /* 14px */
+  --tr-xl: -.011em;    /* 17px display */
+
+  --lh-xs: 1.55;       /* small text needs room for ascenders/descenders */
+  --lh-sm: 1.5;
+  --lh-md: 1.45;
+  --lh-lg: 1.35;
+  --lh-xl: 1.25;
+
+  /* Uppercase needs more tracking than the same size in sentence case: caps
+     have no ascender or descender to carry the word's shape, so the letters
+     need more air between them to stay readable. This is a multiplier on the
+     size's own tracking rather than a hand-tuned pixel value, so a caps label
+     still tracks with the scale if the scale ever moves. */
+  --tr-caps: 1.9;
+
+  /* Icon-glyph size. Deliberately not a type-scale step: an icon font is sized
+     by the glyph's em box, not by how large the mark should read as text, so
+     folding it into the scale would be a category error. It gets its own token
+     so the "sizes come from the scale" rule stays true without a hidden
+     exception. */
+  --ico: 9px;
+
+  --dur: 160ms;
+  --ease: cubic-bezier(.22, .61, .36, 1);
+
+  /* Press feedback is a separate, much shorter clock than a state change —
+     it must land inside the ~100ms perception window (apple-design §1). */
+  --dur-press: 90ms;
+  --ease-press: cubic-bezier(.3, 0, .2, 1);
+
+  /* Structural metrics. --topbar-h is republished from JS by a
+     ResizeObserver, because the top bar wraps to two rows on narrow
+     viewports and any hardcoded sticky offset drifts out of alignment. */
+  --rail-w: 210px;
+  --topbar-h: 57px;
+  --rail-mark: 3px;
+
+  /* Where the accent has to carry meaning as a mark or as text rather than
+     as a tint, it needs weight against the surface. On a light panel a
+     bright accent measures ~1.7:1, which is not a visible mark, so the
+     light theme pulls it toward that theme's own dark text — keeping the
+     user's chosen hue while making the mark legible. Deriving it with
+     color-mix means all five accents stay compliant without exploding into
+     a theme x accent matrix. Dark themes do not override it, so there it
+     stays the pure accent. */
+  --accent-mark: var(--accent);
+  --accent-wash: color-mix(in srgb, var(--accent) 14%, transparent);
+
+  /* The lit edge of a material. A translucent surface with a hairline border
+     alone reads as a flat rectangle; a bright line along its top edge is what
+     makes it read as a physical sheet catching light from above
+     (apple-design §12). Dark themes catch white light, light themes catch a
+     shadow instead — the same trick, opposite polarity — so the token is
+     overridden per theme rather than inverted in CSS. */
+  --edge: rgb(255 255 255 / .14);
+  /* Soft edge for content passing under floating chrome. Preferred over a
+     1px rule where the surface actually overlaps scrolling content (§12). */
+  --edge-scroll: rgb(0 0 0 / .38);
+
+  /* State washes and edges, derived from --warn / --err exactly the way the
+     accent pair is. Because these reference the per-theme state colours they
+     resolve correctly in all four themes with no override table to maintain —
+     the failure mode of a hand-written per-theme wash is that one theme gets
+     missed and the warning chip becomes invisible precisely where it matters. */
+  --warn-line: color-mix(in srgb, var(--warn) 42%, transparent);
+  --warn-wash: color-mix(in srgb, var(--warn) 13%, transparent);
+  --err-line:  color-mix(in srgb, var(--err) 46%, transparent);
+  --err-wash:  color-mix(in srgb, var(--err) 13%, transparent);
+}
+
+/* ── 2 · GRAPHITE (default dark) ─────────────────────────────────────── */
+:root,
+[data-theme="graphite"] {
+  color-scheme: dark;
+
+  --bg:        #0a0e13;
+  --bg-deep:   #060809;
+  --panel:     #101620;
+  --panel-2:   #151d29;
+  --raised:    #1a2432;
+  --hover:     #213040;
+  --line:      #223041;
+  --line-2:    #31455c;
+
+   --text:      #e9eff6;
+  --text-2:    #96a6b8;
+  /* 4.59:1 on --panel. Solved, not eyeballed — see `node contrast.mjs`. */
+  --text-3:    #718293;
+
+  --ok:   #4fd6a4;
+  --warn: #f5c065;
+  --err:  #ff7285;
+  --info: #6bc6e8;
+  --dbg:  #c69bf0;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / .4);
+  --shadow-grip: 0 1px 3px rgb(0 0 0 / .5);
+  --shadow-2: 0 14px 40px rgb(0 0 0 / .55);
+  --scrim:    rgb(4 7 11 / .68);
+  --graph-bg: #070a0f;
+  --wash:     rgb(255 255 255 / .04);
+  --wash-2:   rgb(255 255 255 / .07);
+}
+
+/* ── 3 · OLED (pure black) ───────────────────────────────────────────── */
+[data-theme="oled"] {
+  color-scheme: dark;
+
+  --bg:        #000;
+  --bg-deep:   #000;
+  --panel:     #08080a;
+  --panel-2:   #0e0e11;
+  --raised:    #161619;
+  --hover:     #1e1e23;
+  --line:      #1d1d21;
+  --line-2:    #2e2e35;
+
+  --text:      #f2f2f4;
+  --text-2:    #9a9aa4;
+  --text-3:    #787882;   /* 4.58:1 on --panel */
+
+  --ok:   #46e2a2;
+  --warn: #ffc768;
+  --err:  #ff6f85;
+  --info: #5cc6f0;
+  --dbg:  #c894f5;
+
+  --shadow-1: none;
+  --shadow-grip: none;
+  --shadow-2: 0 14px 44px rgb(0 0 0 / .8);
+  --scrim:    rgb(0 0 0 / .8);
+  --graph-bg: #000;
+  --wash:     rgb(255 255 255 / .035);
+  --wash-2:   rgb(255 255 255 / .07);
+}
+
+/* ── 4 · PAPER (light) ───────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:        #eef1f5;
+  --bg-deep:   #e2e6ec;
+  --panel:     #ffffff;
+  --panel-2:   #f6f8fa;
+  --raised:    #ffffff;
+  --hover:     #eaeef3;
+  --line:      #d3dae3;
+  --line-2:    #b4c0cd;
+
+  --text:      #101820;
+  --text-2:    #4d5a68;
+  --text-3:    #626f7c;   /* 4.54:1 on --bg, 5.14:1 on --panel */
+
+  --ok:   #107856;         /* 4.82:1 on --bg */
+  --warn: #96620a;
+  --err:  #c4304a;
+  --info: #146a94;
+  --dbg:  #7b47b8;
+
+  --shadow-1: 0 1px 2px rgb(16 24 32 / .1);
+  --shadow-grip: 0 1px 3px rgb(16 24 32 / .18);
+  --shadow-2: 0 12px 32px rgb(16 24 32 / .16);
+  --scrim:    rgb(28 36 46 / .38);
+  --graph-bg: #fbfcfd;
+  --wash:     rgb(16 24 32 / .035);
+  --wash-2:   rgb(16 24 32 / .07);
+
+  /* Light surfaces catch a shadow along their top edge instead of a highlight. */
+  --edge:        rgb(16 24 32 / .085);
+  --edge-scroll: rgb(16 24 32 / .12);
+
+  /* A bright accent on white is neither a legible mark nor a visible wash,
+     so both are mixed toward --text. Verified by `node contrast.mjs`. */
+  --accent-mark: color-mix(in srgb, var(--accent) 62%, #101820);
+  --accent-wash: color-mix(in srgb, var(--accent) 16%, #eef1f5);
+}
+
+/* ── 5 · CONTRAST (high contrast, WCAG AAA body text) ────────────────── */
+[data-theme="contrast"] {
+  color-scheme: dark;
+
+  --bg:        #000;
+  --bg-deep:   #000;
+  --panel:     #0a0f14;
+  --panel-2:   #0e141b;
+  --raised:    #16202b;
+  --hover:     #1f2c3a;
+  --line:      #3d5064;
+  --line-2:    #64809a;
+
+  --text:      #fff;
+  --text-2:    #d3dee8;
+  --text-3:    #a8b8c8;
+
+  --ok:   #5cffbe;
+  --warn: #ffd166;
+  --err:  #ff8fa3;
+  --info: #8fd8f5;
+  --dbg:  #ddb0ff;
+
+  --shadow-1: none;
+  --shadow-grip: none;
+  --shadow-2: 0 0 0 1px var(--line);
+  --scrim:    rgb(0 0 0 / .88);
+  --graph-bg: #000;
+  --wash:     rgb(255 255 255 / .08);
+  --wash-2:   rgb(255 255 255 / .14);
+}
+
+/* ── 6 · ACCENTS  (orthogonal — combine with any theme above) ────────── */
+[data-accent="mint"] {
+  --accent:      #3fe0c0;
+  --accent-hi:   #7df0da;
+  --accent-ink:  #04231d;
+  --accent-soft: rgb(63 224 192 / .13);
+  --accent-line: rgb(63 224 192 / .42);
+  --boost:       #3fe0c0;
+  --cut:         #ff7a93;
+}
+[data-accent="azure"] {
+  --accent:      #57b4ff;
+  --accent-hi:   #8fcdff;
+  --accent-ink:  #04203a;
+  --accent-soft: rgb(87 180 255 / .13);
+  --accent-line: rgb(87 180 255 / .42);
+  --boost:       #57b4ff;
+  --cut:         #ff9a6b;
+}
+[data-accent="amber"] {
+  --accent:      #ffb545;
+  --accent-hi:   #ffd08a;
+  --accent-ink:  #2b1700;
+  --accent-soft: rgb(255 181 69 / .13);
+  --accent-line: rgb(255 181 69 / .42);
+  --boost:       #ffb545;
+  --cut:         #6bd0ff;
+}
+[data-accent="violet"] {
+  --accent:      #b48bff;
+  --accent-hi:   #d3baff;
+  --accent-ink:  #1c0b3a;
+  --accent-soft: rgb(180 139 255 / .14);
+  --accent-line: rgb(180 139 255 / .42);
+  --boost:       #b48bff;
+  --cut:         #59e5b6;
+}
+[data-accent="rose"] {
+  --accent:      #ff7fa8;
+  --accent-hi:   #ffabc4;
+  --accent-ink:  #33051a;
+  --accent-soft: rgb(255 127 168 / .13);
+  --accent-line: rgb(255 127 168 / .42);
+  --boost:       #ff7fa8;
+  --cut:         #6bd6ff;
+}
+
+/* ── 7 · MOTION / DENSITY PREFERENCES ───────────────────────────────── */
+[data-motion="reduced"] { --dur: 0ms; }
+[data-motion="reduced"] * { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   8 · THE FOUR LOCKS
+   Rules the stylesheet holds itself to. Each one exists because breaking
+   it was a bug at least once, not because a style guide says so.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* 1 · SHAPE — one radius scale, applied by role. Mixing roles reads as
+   broken, so there is no second scale to reach for.
+     --r-xl    panels, the sidebar, any large surface
+     --r-lg    nested containers
+     --r-md    buttons and inputs          <- the interactive size
+     --r-sm    chips, inline marks
+     --r-pill  badges and the active marker (fully round)                */
+
+/* 2 · COLOUR — one accent per session, chosen by the user, applied to the
+   whole app. --boost / --cut are not a second and third accent: they are a
+   fixed semantic pair that means "louder" and "quieter" in the EQ graph and
+   never carries navigation or brand meaning.                             */
+
+/* 3 · CONTRAST — every text/surface pair in the UI is listed in
+   `contrast.mjs` and must clear WCAG AA (4.5:1 at these sizes). That file
+   is the check; do not retune a colour token without re-running it.      */
+
+/* 4 · Z-INDEX — a closed scale, so "just bump it" cannot start a war:
+     1  in-card overlays (inline validation, graph target label)
+     5  graph annotations drawn above the plot
+     50 sticky chrome that content scrolls under (status bar, sidebar on
+        narrow viewports)
+     60 the top bar
+     200 modals (command palette, help)
+     300 sheets (settings, confirm dialogs)
+     400 toasts — always last, they are the only thing allowed to interrupt  */
+
+/* Deliberate exception to "no pure black": the OLED theme's --bg / --bg-deep
+   / --graph-bg are #000 on purpose. On an OLED panel true black switches
+   those pixels off, which is the entire reason that theme exists. The
+   `contrast` theme also uses it to maximise measured separation. Everywhere
+   else the darks are off-blacks (#0a0e13, #070a0f) so surfaces keep depth. */
