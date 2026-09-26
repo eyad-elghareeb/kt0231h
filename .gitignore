@@ -22,3 +22,9 @@ patch-test*.cjs
 patch-fwtest.cjs
 patch-header.cjs
 patch-tokens.cjs
+
+# Design review helpers. Screenshots were how the design was judged during
+# development; they are regenerable and would bloat the history.
+shots-audit/
+audit-shot.mjs
+align-check.mjs
