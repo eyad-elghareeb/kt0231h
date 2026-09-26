@@ -807,6 +807,25 @@ input.vslider::-moz-range-thumb { width: 18px; height: 12px; border-radius: 3px;
   #toast-root { left: var(--sp-3); right: var(--sp-3); bottom: 44px; align-items: stretch; }
   .toast { max-width: none; }
 }
+/* Theme settle (apple-design §14: ease dark-to-light changes rather than
+   flashing the viewport). Elements cross-fade their own background, border and
+   shadow so the switch reads as a dip through the midpoint instead of a jump.
+   Scoped to .theme-settling, which JS adds only on a real change and removes
+   after 340ms, so nothing else is ever delayed. The global reduced-motion rule
+   below already collapses transition-duration, so no duplicate is needed. */
+.theme-settling .topbar,
+.theme-settling .rail,
+.theme-settling .panel,
+.theme-settling .btn,
+.theme-settling .input,
+.theme-settling .band,
+.theme-settling .pill,
+.theme-settling .seg-group,
+.theme-settling .statusbar,
+.theme-settling .write-trust {
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease), color var(--dur) var(--ease);
+}
 /* Reduced motion is a gentler equivalent, not "no feedback" (apple-design §14):
    colour and opacity still change, nothing travels. */
 @media (prefers-reduced-motion: reduce) {

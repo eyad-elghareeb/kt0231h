@@ -116,6 +116,18 @@ const Settings = {
   apply() {
     const d = this.data;
     const root = document.documentElement;
+    /* §14: a dark-to-light switch is a large brightness jump across the whole
+       viewport, exactly the abrupt change the guidance says to ease. Elements
+       transition their own background and border rather than the attribute
+       flip, and the settling class is dropped as soon as the window lands so
+       later style changes are never delayed by it. The first paint is skipped
+       outright, or the app would fade in from the default background. */
+    if (this._booted) {
+      root.classList.add('theme-settling');
+      clearTimeout(this._settleT);
+      this._settleT = setTimeout(() => root.classList.remove('theme-settling'), 340);
+    }
+    this._booted = true;
     root.dataset.theme = d.theme;
     root.dataset.accent = d.accent;
     root.dataset.motion = d.reduceMotion ? 'reduced' : 'full';
