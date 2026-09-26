@@ -5,6 +5,16 @@ TANCHJIM_DSP_S_KT0211L_20240815_v1.0.2.bin
   https://d1c6gk3tn6ydje.cloudfront.net/1875933634511282176%2Fde3560213f76846d44d7a10d2398a9da.zip
   (linked from https://tanchjim.com/en/dsps-upgrade/ , dir tanchjim_dsps_upgrade_20240913/)
 
+KT0211L_FISSION_v1.0.2_250610.bin
+  Official Tanchjim Fission upgrade package, build 2025-06-12
+  https://www.tanchjimaudio.com/app-services  (CloudFront, dir
+  tanchjim_fission_upgrade_20250612/) - one generation newer than the
+  DSP S image above, same KT0211L die class
+
+KT0211L_fission_rational_hifi_edition_v1.0.1_20250610.bin
+  Official Tanchjim Fission Rational HiFi Edition upgrade package,
+  build 2025-06-12 (CloudFront 3593ce3b... per the vendor pack SHA256SUMS)
+
 KT02H20_TINHIFI_20240328_v1.0.1.bin
   KT_USB_APP.zip vendor package (oshwhub attachment abd1556a453f4bd9b2ab419a47526bc2.zip)
 

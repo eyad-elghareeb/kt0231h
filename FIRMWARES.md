@@ -9,12 +9,14 @@ Verify SHA-256 before flashing anything.
 | File | Chip / family | Size | SHA-256 (first 16) | Source |
 |---|---|---|---|---|
 | `TANCHJIM_DSP_S_KT0211L_20240815_v1.0.2.bin` | KT0211L (Tanchjim DSP S) | 42,272 B | `a8dc36cc5710d049` | Official Tanchjim DSP S upgrade zip V1.0.2 (`tanchjim.com/en/dsps-upgrade/`, CloudFront `1875933634511282176%2Fde3560213f76846d44d7a10d2398a9da.zip`, dir `tanchjim_dsps_upgrade_20240913/`) |
+| `KT0211L_FISSION_v1.0.2_250610.bin` | KT0211L (Tanchjim Fission) | 42,272 B | `9abe8e0b2ad97a86` | Official Tanchjim Fission upgrade package, build 2025-06-12 (`tanchjimaudio.com/app-services`, CloudFront, dir `tanchjim_fission_upgrade_20250612/`) — one generation newer than the DSP S image, same die class and same 42,272 B size |
+| `KT0211L_fission_rational_hifi_edition_v1.0.1_20250610.bin` | KT0211L (Fission Rational HiFi Edition) | 43,440 B | `9abe7c7cff44c7e6` | Official Tanchjim upgrade package, build 2025-06-12 (CloudFront `3593ce3b…`). 1,168 B larger than the Fission image — a different OEM feature set, still KT0211L |
 | `KT02H20_TINHIFI_20240328_v1.0.1.bin` | KT02H20 (TINHIFI build) | 62,784 B | `9aca008fbc8a7faf` | Shipped inside the KT_USB_APP.zip vendor package (oshwhub `abd1556a453f4bd9b2ab419a47526bc2.zip`), alongside `KT02H20_1.0.17.ini` |
 | `KT02F20_SDK_20250206_disable_jack.bin` | KT02F20 (SDK, jack detect off) | 61,632 B | `96eee5f5fa6b4531` | oshwhub KT02F20 project `40fbb08fbb8246a4b9d1fb7f57fcf465.bin` |
 | `KT02F20_SDK_20250206_jack_GPIO_03.bin` | KT02F20 (SDK, jack detect on GPIO3) | 61,632 B | `99f76001f5d25ffe` | oshwhub KT02F20 project `3aceb6dd52434d7c9707dd429d536834.bin` |
 | `KT0712_SDK_V2.1_20230724.bin` | KT0712A (KTM_TT_V3 platform) | 160,400 B | `16cd1ae5fe9465f2` | Carved from KT_BOOT_TOOL_1.0.58.exe Qt resource `:/res/…` (file offset `0xfbd841`) — see `VENDOR-TOOLS.md` |
 | `KT0206_boot_v1.05_20210608.bin` | MSV2B boot loader (KT020x) | 17,424 B | `4560861a53128ff0` | Carved from TANCHJIM_DSPS_BOOT_TOOL_1.0.03.exe → embedded `kt_usb_cmd_tool.exe` v1.3.16 resource (zlib @ `0x4192c8` of the carved tool) — matches the default boot image name `KT0206_boot_v1.05_20210608.bin` in its CLI strings |
-| `KT0712_reset_spi_part1_224B.bin` / `part2_32B.bin` | KT0712 SPI-reset loader pieces | 224 B + 32 B | `e7eba84b36b6e516` / `4323f29dc1bc4a06` | Carved from KT_BOOT_TOOL_1.0.58.exe resource array (`0xfe4ad5`, `0xfe4bb9`) |
+| `KT0712_reset_spi_part1_224B.bin` / `part2_32B.bin` | KT0712 SPI-reset loader pieces | 224 B + 32 B | `4eb9f344ff0c40bd` / `bd2aea413e497f91` | Carved from KT_BOOT_TOOL_1.0.58.exe resource array (`0xfe4ad5`, `0xfe4bb9`) |
 
 These are vendor-published / vendor-embedded images (not dumps): redistributing
 them alongside full source attribution is what every existing RE repo already
