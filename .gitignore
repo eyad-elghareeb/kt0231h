@@ -1,0 +1,24 @@
+# Test-harness and review scratch. Screenshots were how the design was judged
+# during development; they are regenerable and would bloat the history.
+shots*/
+.chrome/
+.cortexkit/
+*.log
+
+# Node scratch drivers. The real suites live in the list below and are tracked.
+probe*.js
+probe*.mjs
+dbg*.mjs
+domdump.mjs
+check_ids.cjs
+checkenc.cjs
+p6.cjs
+appleshot.mjs
+railshot.mjs
+trustshot.mjs
+shots*.cjs
+shots*.mjs
+patch-test*.cjs
+patch-fwtest.cjs
+patch-header.cjs
+patch-tokens.cjs
