@@ -538,8 +538,7 @@ const App = {
     if (p?.incompatible) {
       box.dataset.tier = 'none';
       box.innerHTML = '<span class="trust-dot" aria-hidden="true"></span>'
-        + '<b>unreachable</b> — not a USB-audio part, nothing is written';
-      box.title = `Profile: none · ${p.chip ?? p.name} is outside this transport`;
+        + '<b>unreachable</b> — not a USB-audio part, nothing is written';      box.title = `Profile: none · ${p.chip ?? p.name} is outside this transport`;
       return;
     }
     const tier = CONFIDENCE[p?.confidence] ? p.confidence : 'guess';

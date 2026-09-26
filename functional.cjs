@@ -1167,6 +1167,13 @@ const TEST = `(async () => {
     if (DEFAULT_PROFILE.confidence !== 'guess') {
       return 'the untargeted default claims ' + DEFAULT_PROFILE.confidence + ' rather than guess';
     }
+    // §16.6 Simplicity: the tier name is the headline, so the blurb stays one
+    // clause. A length guard rather than a style opinion — a badge that grows
+    // into a sentence stops being glanceable in a panel header.
+    const long = Object.entries(CONFIDENCE)
+      .filter(([, t]) => t.blurb.split(/\s+/).filter(Boolean).length > 6)
+      .map(([k, t]) => k + ' = "' + t.blurb + '"');
+    if (long.length) return 'badge blurb too long: ' + long.join('; ');
     return true;
   });
   t('only hardware-dumped parts claim verified', () => {

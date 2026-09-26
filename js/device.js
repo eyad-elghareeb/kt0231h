@@ -80,10 +80,14 @@ const HELIOS_REG = Object.freeze({
  *   guess    - no evidence for this specific part at all. A best-effort
  *              default that must be read back after writing.
  */
+/* One clause each: the tier name is the headline, the blurb is the single most
+   useful fact or action. An earlier draft chained three clauses here, which
+   turned a status chip into a paragraph in a panel header (apple-design §16.6).
+   Anything longer belongs in the title attribute, not on screen. */
 const CONFIDENCE = {
-  verified: { rank: 2, label: 'verified',  blurb: 'run-mode dump confirmed on this part' },
-  inferred: { rank: 1, label: 'inferred',  blurb: 'layout derived from family or firmware image' },
-  guess:    { rank: 0, label: 'guess',     blurb: 'no evidence for this part - read back after writing' },
+  verified: { rank: 2, label: 'verified', blurb: 'run-mode dump confirmed here' },
+  inferred: { rank: 1, label: 'inferred', blurb: 'derived from family or image' },
+  guess:    { rank: 0, label: 'guess',    blurb: 'unverified here — read back after writing' },
 };
 
 const PROFILES = {
